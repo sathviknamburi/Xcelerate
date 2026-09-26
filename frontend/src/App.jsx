@@ -1,1761 +1,1057 @@
-import { useEffect, useRef, useState, Fragment } from "react";
+import { useState, useRef } from "react";
 import { registerParticipant } from "./services/registrationApi";
-import LoginPage from "./components/LoginPage";
-import { getStoredAuthToken, clearStoredAuthToken, verifySession } from "./services/authApi";
+import AsteroidsBackground from "./components/AsteroidsBackground";
+import aceLogo from "./assets/ace-logo.png";
 import "./index.css";
 
-import aceLogo from "./assets/ace-logo.png";
-import currentTeam from "./assets/ace-current-team.jpg";
-import previousTeam from "./assets/ace-previous-team.jpg";
-import cseHome from "./assets/csehome.png";
-
-
-/* =========================================================
-   FLOATING ACE — CONTENT
-========================================================= */
-
-const ACE_ITEMS = [
-    {
-        id: 1,
-        title: "Association for Computing Machinery",
-        text: "Where ideas turn into action.",
-    },
-    {
-        id: 2,
-        title: "Built by Students",
-        text: "Driven by curiosity, creativity, and code.",
-    },
-    {
-        id: 3,
-        title: "Innovate. Lead. Excel.",
-        text: "Think beyond the ordinary.",
-    },
-    {
-        id: 4,
-        title: "Learn. Build. Share.",
-        text: "Grow together, one idea at a time.",
-    },
-    {
-        id: 5,
-        title: "More Than a Club",
-        text: "A community of CSE students and creators.",
-    },
-    {
-        id: 6,
-        title: "Carry the Legacy",
-        text: "Every generation leaves something behind.",
-    },
-    {
-        id: 7,
-        title: "Your Ideas Matter",
-        text: "Every great project starts with a thought.",
-    },
-    {
-        id: 8,
-        title: "The Story Continues",
-        text: "The next chapter belongs to you.",
-    },
+const BRANCH_OPTIONS = [
+    "CSE",
+    "AIML",
+    "CIC",
+    "IT",
+    "AIDS",
+    "CSBS",
+    "CSIT",
+    "CSD",
+    "ECE",
+    "EEE",
+    "Mechanical",
+    "Civil",
 ];
 
-const ACE_POPUP_AUTO_DISMISS_MS = 4000;
+const SECTION_OPTIONS = ["A", "B", "C", "D", "E", "F"];
 
-const TOAST_AUTO_DISMISS_MS = 6000;
-const TOAST_EXIT_DURATION_MS = 320;
+const EVENT_TRACKS = [
+    "Artificial Intelligence & AI for Engineering",
+    "Machine Learning",
+    "IoT & Cybersecurity",
+    "Quantum Computing",
+    "DSA Roadmap",
+];
 
+export default function App() {
+    // Current Step in the Wizard: 1 = Student Info, 2 = ACM Membership, 3 = Payment & Pass
+    const [currentStep, setCurrentStep] = useState(1);
 
-/* =========================================================
-   FOOTER TEXT ANIMATION HELPERS
-
-   splitLetters -> used only for the short "ACE" wordmark,
-   where each individual letter sliding in reads as an
-   intentional flourish.
-
-   splitWords -> used for longer footer lines. Real space
-   text nodes are kept BETWEEN the word <span> elements
-   (not inside them), so normal line-wrapping still works
-   correctly on narrow screens — only the words themselves
-   animate, not raw single letters that would otherwise
-   break mid-word on wrap.
-========================================================= */
-
-function splitLetters(text, startDelay = 0, step = 0.06) {
-
-    return text.split("").map((char, index) => (
-
-        <span
-            key={`l-${index}`}
-            className="letter-anim"
-            style={{
-                transitionDelay:
-                    `${startDelay + index * step}s`,
-            }}
-        >
-            {char}
-        </span>
-
-    ));
-
-}
-
-function splitWords(text, startDelay = 0, step = 0.05) {
-
-    const words = text.split(" ");
-    const nodes = [];
-
-    words.forEach((word, index) => {
-
-        nodes.push(
-
-            <span
-                key={`w-${index}`}
-                className="word-anim"
-                style={{
-                    transitionDelay:
-                        `${startDelay + index * step}s`,
-                }}
-            >
-                {word}
-            </span>
-
-        );
-
-        if (index < words.length - 1) {
-            nodes.push(" ");
+    // Device Lock: check if this device has already submitted a response (Google Forms style)
+    const [existingSubmission, setExistingSubmission] = useState(() => {
+        try {
+            const saved = localStorage.getItem("xcelerate_registered_pass");
+            return saved ? JSON.parse(saved) : null;
+        } catch {
+            return null;
         }
-
     });
-
-    return nodes;
-
-}
-
-
-function App() {
-
-    /* =====================================================
-       REFS
-    ===================================================== */
-
-    const heroRef = useRef(null);
-    const aboutRef = useRef(null);
-    const formRef = useRef(null);
-    const footerRef = useRef(null);
-
-    const acePopupTimerRef = useRef(null);
-
-    const toastAutoTimerRef = useRef(null);
-    const toastExitTimerRef = useRef(null);
-
-
-    /* =====================================================
-       AUTHENTICATION STATE
-    ===================================================== */
-
-    const [isAuthenticated, setIsAuthenticated] = useState(() => {
-        return !!getStoredAuthToken();
-    });
-
-    useEffect(() => {
-        let isMounted = true;
-        const checkAuth = async () => {
-            const token = getStoredAuthToken();
-            if (token) {
-                const isValid = await verifySession(token);
-                if (!isValid && isMounted) {
-                    setIsAuthenticated(false);
-                }
-            } else if (isMounted) {
-                setIsAuthenticated(false);
-            }
-        };
-        checkAuth();
-        return () => {
-            isMounted = false;
-        };
-    }, []);
-
-    /* =====================================================
-       HEADER & ROUTING STATE
-    ===================================================== */
-
-    const [scrolled, setScrolled] = useState(false);
-
-
-    /* =====================================================
-       FLOATING ACE STATE
-    ===================================================== */
-
-    const [activeAcePopup, setActiveAcePopup] = useState(null);
-
-    const [formActive, setFormActive] = useState(false);
-
-
-    /* =====================================================
-       FOOTER REVEAL STATE
-    ===================================================== */
-
-    const [footerInView, setFooterInView] = useState(false);
-
-
-    /* =====================================================
-       REGISTRATION FORM STATE
-    ===================================================== */
 
     const [formData, setFormData] = useState({
         name: "",
         email: "",
-        phone: "",
+        registrationNumber: "",
         branch: "",
-        gender: "",
-        year: "",
-        mode: "Normal",
-        registrationType: "ACM India",
-        payment: "",
-        goodies: "",
+        section: "",
+        whatsappNumber: "",
+        isAcmMember: false,
+        acmGroupScreenshot: "",
+        paymentScreenshot: "",
+        utrId: "",
+        declarationConfirmed: false,
     });
 
-
-    /* =====================================================
-       SUBMISSION STATE
-    ===================================================== */
+    const [previews, setPreviews] = useState({
+        acmGroup: null, // { url, name, size }
+        payment: null,  // { url, name, size }
+    });
 
     const [loading, setLoading] = useState(false);
-
     const [error, setError] = useState("");
+    const [successData, setSuccessData] = useState(null);
 
-
-    /* =====================================================
-       SUCCESS TOAST STATE
-
-       "hidden"  -> not rendered at all
-       "visible" -> entrance animation, timer running
-       "closing" -> exit animation playing, then unmounts
-    ===================================================== */
-
-    const [toastPhase, setToastPhase] = useState("hidden");
-
-    const [toastData, setToastData] = useState({
-        name: "",
-        aceId: "",
-        message: "",
-        emailStatus: "",
-    });
-
-
-    /* =====================================================
-       HEADER SCROLL EFFECT
-    ===================================================== */
-
-    useEffect(() => {
-
-        const handleScroll = () => {
-            setScrolled(window.scrollY > 40);
-        };
-
-        window.addEventListener("scroll", handleScroll);
-
-        return () => {
-            window.removeEventListener("scroll", handleScroll);
-        };
-
-    }, []);
-
-
-    /* =====================================================
-       FOOTER SCROLL REVEAL
-
-       One-time reveal: once the footer has entered the
-       viewport, the observer disconnects so the letters/
-       words don't replay every time the user scrolls
-       past it again.
-    ===================================================== */
-
-    useEffect(() => {
-
-        const node = footerRef.current;
-
-        if (!node) {
-            return;
-        }
-
-        const observer = new IntersectionObserver(
-            (entries) => {
-
-                entries.forEach((entry) => {
-
-                    if (entry.isIntersecting) {
-                        setFooterInView(true);
-                        observer.unobserve(entry.target);
-                    }
-
-                });
-
-            },
-            { threshold: 0.25 }
-        );
-
-        observer.observe(node);
-
-        return () => {
-            observer.disconnect();
-        };
-
-    }, []);
-
-
-    /* =====================================================
-       ACE POPUP — AUTO DISMISS
-    ===================================================== */
-
-    useEffect(() => {
-
-        if (acePopupTimerRef.current) {
-            clearTimeout(acePopupTimerRef.current);
-        }
-
-        if (activeAcePopup !== null) {
-
-            acePopupTimerRef.current = setTimeout(() => {
-                setActiveAcePopup(null);
-            }, ACE_POPUP_AUTO_DISMISS_MS);
-
-        }
-
-        return () => {
-
-            if (acePopupTimerRef.current) {
-                clearTimeout(acePopupTimerRef.current);
-            }
-
-        };
-
-    }, [activeAcePopup]);
-
-
-    /* =====================================================
-       ACE POPUP — CLICK OUTSIDE TO CLOSE
-    ===================================================== */
-
-    useEffect(() => {
-
-        const handleDocumentClick = (e) => {
-
-            const clickedAce =
-                e.target.closest(".ace-item");
-
-            const clickedPopup =
-                e.target.closest(".ace-popup");
-
-            if (!clickedAce && !clickedPopup) {
-                setActiveAcePopup(null);
-            }
-
-        };
-
-        document.addEventListener(
-            "click",
-            handleDocumentClick
-        );
-
-        return () => {
-
-            document.removeEventListener(
-                "click",
-                handleDocumentClick
-            );
-
-        };
-
-    }, []);
-
-
-    /* =====================================================
-       ACE CLICK HANDLER
-    ===================================================== */
-
-    const handleAceClick = (id) => {
-
-        if (formActive) {
-            return;
-        }
-
-        setActiveAcePopup((previous) => (
-            previous === id ? null : id
-        ));
-
-    };
-
-
-    /* =====================================================
-       FORM FOCUS / BLUR — PAUSE + RESUME ACE LAYER
-    ===================================================== */
-
-    const handleFormFocus = () => {
-
-        setFormActive(true);
-
-        setActiveAcePopup(null);
-
-    };
-
-    const handleFormBlur = (e) => {
-
-        // Only treat it as "left the form" if focus moved
-        // somewhere outside the form entirely.
-
-        if (!e.currentTarget.contains(e.relatedTarget)) {
-            setFormActive(false);
-        }
-
-    };
-
-
-    /* =====================================================
-       NAVIGATION
-    ===================================================== */
-
-    const scrollToHero = () => {
-
-        heroRef.current?.scrollIntoView({
-            behavior: "smooth",
-        });
-
-    };
-
-
-    const scrollToAbout = () => {
-
-        aboutRef.current?.scrollIntoView({
-            behavior: "smooth",
-            block: "start",
-        });
-
-    };
-
-
-    const scrollToForm = () => {
-
-        formRef.current?.scrollIntoView({
-            behavior: "smooth",
-            block: "start",
-        });
-
-    };
-
-
-    /* =====================================================
-       FORM CHANGE
-    ===================================================== */
+    const acmFileInputRef = useRef(null);
+    const paymentFileInputRef = useRef(null);
 
     const handleChange = (e) => {
+        const { name, value, type, checked } = e.target;
+        if (type === "checkbox") {
+            setFormData((prev) => ({ ...prev, [name]: checked }));
+        } else {
+            setFormData((prev) => ({ ...prev, [name]: value }));
+        }
+        if (error) setError("");
+    };
 
-        const { name, value } = e.target;
-
-        setFormData((previous) => ({
-            ...previous,
-            [name]: value,
+    const handleAcmToggle = (isMember) => {
+        setFormData((prev) => ({
+            ...prev,
+            isAcmMember: isMember,
+            acmGroupScreenshot: isMember ? prev.acmGroupScreenshot : "",
         }));
+        if (!isMember) {
+            setPreviews((prev) => ({ ...prev, acmGroup: null }));
+            if (acmFileInputRef.current) acmFileInputRef.current.value = "";
+        }
+        if (error) setError("");
+    };
 
+    // Step 1 Validation -> Move to Step 2
+    const handleNextFromStep1 = () => {
         setError("");
 
+        if (!formData.name.trim()) {
+            setError("Please enter your full name.");
+            return;
+        }
+
+        const rawEmail = formData.email.trim();
+        if (!rawEmail) {
+            setError("Please enter your Gmail username or address.");
+            return;
+        }
+        const emailUsername = rawEmail.toLowerCase().replace(/@.*$/, "").trim();
+        if (!emailUsername) {
+            setError("Please provide a valid Gmail username.");
+            return;
+        }
+
+        if (!formData.registrationNumber.trim()) {
+            setError("Please enter your College Registration Number.");
+            return;
+        }
+
+        const cleanPhone = formData.whatsappNumber.trim();
+        if (!/^[0-9]{10}$/.test(cleanPhone)) {
+            setError("WhatsApp Number must be exactly 10 digits.");
+            return;
+        }
+
+        if (!formData.branch) {
+            setError("Please select your branch.");
+            return;
+        }
+
+        if (!formData.section) {
+            setError("Please select your section.");
+            return;
+        }
+
+        setCurrentStep(2);
     };
 
-
-    /* =====================================================
-       SUCCESS TOAST — CLOSE (manual or timed)
-    ===================================================== */
-
-    const closeToast = () => {
-
-        setToastPhase("closing");
-
-        if (toastExitTimerRef.current) {
-            clearTimeout(toastExitTimerRef.current);
-        }
-
-        toastExitTimerRef.current = setTimeout(() => {
-            setToastPhase("hidden");
-        }, TOAST_EXIT_DURATION_MS);
-
+    // Step 2 -> Move to Step 3
+    const handleNextFromStep2 = () => {
+        setError("");
+        setCurrentStep(3);
     };
 
+    // File selection for ACM WhatsApp Group Screenshot (Max 1MB)
+    const handleAcmScreenshotChange = (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
 
-    /* =====================================================
-       SUCCESS TOAST — AUTO DISMISS TIMER
-    ===================================================== */
-
-    useEffect(() => {
-
-        if (toastAutoTimerRef.current) {
-            clearTimeout(toastAutoTimerRef.current);
+        if (file.size > 1 * 1024 * 1024) {
+            setError(
+                `ACM WhatsApp Group screenshot is too large (${(file.size / (1024 * 1024)).toFixed(2)} MB). Max limit is 1 MB. Please compress or take a smaller screenshot.`
+            );
+            if (acmFileInputRef.current) acmFileInputRef.current.value = "";
+            return;
         }
 
-        if (toastPhase === "visible") {
+        const reader = new FileReader();
+        reader.onload = () => {
+            const base64 = reader.result;
+            setFormData((prev) => ({ ...prev, acmGroupScreenshot: base64 }));
+            setPreviews((prev) => ({
+                ...prev,
+                acmGroup: {
+                    url: base64,
+                    name: file.name,
+                    size: `${(file.size / 1024).toFixed(1)} KB`,
+                },
+            }));
+            setError("");
+        };
+        reader.readAsDataURL(file);
+    };
 
-            toastAutoTimerRef.current = setTimeout(() => {
-                closeToast();
-            }, TOAST_AUTO_DISMISS_MS);
+    // File selection for Payment Screenshot (Max 10MB)
+    const handlePaymentScreenshotChange = (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
 
+        if (file.size > 10 * 1024 * 1024) {
+            setError(
+                `Payment screenshot is too large (${(file.size / (1024 * 1024)).toFixed(2)} MB). Max limit is 10 MB.`
+            );
+            if (paymentFileInputRef.current) paymentFileInputRef.current.value = "";
+            return;
         }
 
-        return () => {
-
-            if (toastAutoTimerRef.current) {
-                clearTimeout(toastAutoTimerRef.current);
-            }
-
+        const reader = new FileReader();
+        reader.onload = () => {
+            const base64 = reader.result;
+            setFormData((prev) => ({ ...prev, paymentScreenshot: base64 }));
+            setPreviews((prev) => ({
+                ...prev,
+                payment: {
+                    url: base64,
+                    name: file.name,
+                    size: `${(file.size / (1024 * 1024)).toFixed(2)} MB`,
+                },
+            }));
+            setError("");
         };
+        reader.readAsDataURL(file);
+    };
 
-    }, [toastPhase]);
+    const removeAcmScreenshot = (e) => {
+        e.stopPropagation();
+        setFormData((prev) => ({ ...prev, acmGroupScreenshot: "" }));
+        setPreviews((prev) => ({ ...prev, acmGroup: null }));
+        if (acmFileInputRef.current) acmFileInputRef.current.value = "";
+    };
 
+    const removePaymentScreenshot = (e) => {
+        e.stopPropagation();
+        setFormData((prev) => ({ ...prev, paymentScreenshot: "" }));
+        setPreviews((prev) => ({ ...prev, payment: null }));
+        if (paymentFileInputRef.current) paymentFileInputRef.current.value = "";
+    };
 
-    /* =====================================================
-       CLEAR ANY PENDING TOAST TIMERS ON UNMOUNT
-    ===================================================== */
-
-    useEffect(() => {
-
-        return () => {
-
-            if (toastAutoTimerRef.current) {
-                clearTimeout(toastAutoTimerRef.current);
-            }
-
-            if (toastExitTimerRef.current) {
-                clearTimeout(toastExitTimerRef.current);
-            }
-
-        };
-
-    }, []);
-
-
-    /* =====================================================
-       FORM SUBMISSION
-
-       On success the registration form stays on screen —
-       no page swap. A toast slides in to confirm the
-       registration, the form clears itself for the next
-       entrant, and the toast dismisses itself shortly
-       after (or the user can close it immediately).
-    ===================================================== */
-
+    // Final Submission (Step 3)
     const handleSubmit = async (e) => {
-
         e.preventDefault();
-
         setError("");
+
+        if (formData.isAcmMember && !formData.acmGroupScreenshot) {
+            setError("Please upload your ACM Body Member (2025-2029) WhatsApp group screenshot (Max 1MB).");
+            return;
+        }
+
+        if (!formData.paymentScreenshot) {
+            setError("Please upload your payment screenshot (Max 10MB).");
+            return;
+        }
+
+        if (!formData.utrId.trim()) {
+            setError("Please enter your Unique Transaction Reference (UTR) ID.");
+            return;
+        }
+
+        if (!formData.declarationConfirmed) {
+            setError("Please check the confirmation declaration to complete your registration.");
+            return;
+        }
+
         setLoading(true);
 
         try {
+            const emailUsername = formData.email.trim().toLowerCase().replace(/@.*$/, "");
+            const fullEmail = `${emailUsername}@gmail.com`;
 
-            /*
-                Backend expects the complete Gmail address.
+            const payload = {
+                ...formData,
+                email: fullEmail,
+                registrationNumber: formData.registrationNumber.trim().toUpperCase(),
+                whatsappNumber: formData.whatsappNumber.trim(),
+                utrId: formData.utrId.trim().toUpperCase(),
+            };
 
-                Frontend only asks the EBMs to enter
-                the username part.
-            */
+            const response = await registerParticipant(payload);
 
-            const emailUsername =
-                formData.email.trim().toLowerCase().replace(/@.*$/, "");
-
-            const email =
-                `${emailUsername}@gmail.com`;
-
-
-            const response =
-                await registerParticipant({
-                    ...formData,
-                    typeOfRegistration: formData.registrationType,
-                    email,
-                });
-
-
-            setToastData({
+            const submissionRecord = {
                 name: formData.name,
-                aceId: response.aceId || "",
+                registrationNumber: payload.registrationNumber,
+                branch: formData.branch,
+                section: formData.section,
+                isAcmMember: formData.isAcmMember,
+                email: fullEmail,
                 message: response.message,
-                emailStatus: response.emailStatus,
-            });
+                qrToken: response.registration?.qrToken,
+                registeredAt: new Date().toLocaleDateString("en-IN", {
+                    day: "numeric",
+                    month: "short",
+                    year: "numeric",
+                }),
+            };
 
-            setToastPhase("visible");
+            try {
+                localStorage.setItem("xcelerate_registered_pass", JSON.stringify(submissionRecord));
+            } catch (storageErr) {
+                console.warn("Storage warning:", storageErr);
+            }
 
+            setExistingSubmission(submissionRecord);
+            setSuccessData(submissionRecord);
 
+            // Reset form
             setFormData({
                 name: "",
                 email: "",
-                phone: "",
+                registrationNumber: "",
                 branch: "",
-                gender: "",
-                year: "",
-                mode: "Normal",
-                registrationType: "ACM India",
-                payment: "",
-                goodies: "",
+                section: "",
+                whatsappNumber: "",
+                isAcmMember: false,
+                acmGroupScreenshot: "",
+                paymentScreenshot: "",
+                utrId: "",
+                declarationConfirmed: false,
             });
-
+            setPreviews({ acmGroup: null, payment: null });
+            setCurrentStep(1);
+            if (acmFileInputRef.current) acmFileInputRef.current.value = "";
+            if (paymentFileInputRef.current) paymentFileInputRef.current.value = "";
         } catch (err) {
-
-            const message =
+            const msg =
+                err.response?.data?.errors?.[0] ||
                 err.response?.data?.message ||
-                "Registration failed. Please try again.";
-
-            setError(message);
-
+                "Registration failed. Please check your inputs and network connection.";
+            setError(msg);
         } finally {
-
             setLoading(false);
-
         }
-
     };
 
-
-    /* =====================================================
-       UI
-    ===================================================== */
-
-    if (!isAuthenticated) {
-        return (
-            <div className="app">
-                {/* ELEGANT COSMIC ASTEROID SHOWER BACKGROUND */}
-                <div className="asteroid-container" aria-hidden="true">
-                    <div className="asteroid asteroid-1" />
-                    <div className="asteroid asteroid-2" />
-                    <div className="asteroid asteroid-3" />
-                    <div className="asteroid asteroid-4" />
-                    <div className="asteroid asteroid-5" />
-                    <div className="asteroid asteroid-6" />
-                    <div className="asteroid asteroid-7" />
-                    <div className="asteroid asteroid-8" />
-                    <div className="asteroid asteroid-9" />
-                    <div className="asteroid asteroid-10" />
-                    <div className="asteroid asteroid-11" />
-                    <div className="asteroid asteroid-12" />
-                </div>
-
-                <LoginPage onLoginSuccess={() => setIsAuthenticated(true)} />
-            </div>
-        );
-    }
-
     return (
-
         <div className="app">
+            <AsteroidsBackground />
 
-
-            {/* ELEGANT COSMIC ASTEROID SHOWER BACKGROUND */}
-            <div className="asteroid-container" aria-hidden="true">
-                <div className="asteroid asteroid-1" />
-                <div className="asteroid asteroid-2" />
-                <div className="asteroid asteroid-3" />
-                <div className="asteroid asteroid-4" />
-                <div className="asteroid asteroid-5" />
-                <div className="asteroid asteroid-6" />
-                <div className="asteroid asteroid-7" />
-                <div className="asteroid asteroid-8" />
-                <div className="asteroid asteroid-9" />
-                <div className="asteroid asteroid-10" />
-                <div className="asteroid asteroid-11" />
-                <div className="asteroid asteroid-12" />
-            </div>
-
-            {/* =================================================
-                HEADER
-            ================================================= */}
-
-            <header
-                className={`site-header ${
-                    scrolled ? "scrolled" : ""
-                }`}
-            >
-
+            {/* HEADER */}
+            <header className="site-header">
                 <div className="header-inner">
-
-
-                    {/* ACE BRAND */}
-
-                    <div
-                        className="brand"
-                        onClick={scrollToHero}
-                        role="button"
-                        tabIndex={0}
-                    >
-
-                        <img
-                            src={aceLogo}
-                            alt="ACM Logo"
-                            className="header-logo"
-                        />
-
+                    <div className="brand">
+                        <img src={aceLogo} alt="ACM Logo" className="header-logo" />
                         <div className="brand-text">
-
-                            <strong>ACM</strong>
-
-                            <span>
-                                SRKR Engineering College
-                            </span>
-
+                            <strong>SRKR ACM CHAPTER</strong>
+                            <span>DEPT. OF COMPUTER SCIENCE &amp; ENGINEERING</span>
                         </div>
-
                     </div>
 
-
-                    {/* NAVIGATION */}
-
-                    <nav className="header-nav">
-
-                        <button onClick={scrollToAbout}>
-                            About
-                        </button>
-
-                        <button onClick={scrollToForm}>
-                            Register
-                        </button>
-
-                        <button
-                            className="header-lock-btn"
-                            onClick={() => {
-                                clearStoredAuthToken();
-                                setIsAuthenticated(false);
-                            }}
-                            title="Lock Portal Session"
-                        >
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-                                <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-                            </svg>
-                            <span>Lock</span>
-                        </button>
-
-                    </nav>
-
+                    <div className="header-event-badge">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
+                        Xcelerate-2K26
+                    </div>
                 </div>
-
             </header>
 
-
-
-            {/* =================================================
-                SUCCESS TOAST
-
-                Fixed to the viewport so it appears above
-                whatever the user is looking at — it never
-                replaces the hero, form, or about content.
-            ================================================= */}
-
-            {toastPhase !== "hidden" && (
-
-                <div
-                    className={`success-toast marvel-toast ${
-                        toastPhase === "closing"
-                            ? "toast-closing"
-                            : "toast-visible"
-                    }`}
-                    role="status"
-                >
-
-                    <div className="toast-icon marvel-icon">
-                        🛡️
+            {/* MAIN CONTENT */}
+            <main className="main-content">
+                {/* HERO BANNER */}
+                <section className="hero-wrapper">
+                    <div className="hero-pill-badge">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
+                        SRKR ACM Student Chapter Presents
                     </div>
 
-
-                    <div className="toast-body">
-
-                        <div className="marvel-quote-box">
-                            <span className="marvel-quote-badge">⚡ MARVEL HERO DIRECTIVE ⚡</span>
-                            <blockquote className="marvel-quote-text">
-                                “With great power comes great responsibility.”
-                            </blockquote>
-                        </div>
-
-                        <strong>
-                            Freshers Assembled! Welcome to ACM, {toastData.name}.
-                        </strong>
-
-                        {toastData.aceId && (
-                            <div className="marvel-hero-id-box">
-                                <span className="marvel-hero-id-label">MEMBER / PASS ID</span>
-                                <span className="marvel-hero-id-code">{toastData.aceId}</span>
-                            </div>
-                        )}
-
-                        <p className="marvel-toast-sub">
-                            Your official ACM 2026 Hero Pass has been issued successfully.
-                        </p>
-
-                        {toastData.message && (
-
-                            <p className="toast-message">
-                                {toastData.message}
-                            </p>
-
-                        )}
-
-                        {toastData.emailStatus === "Failed" && (
-
-                            <p className="toast-warning">
-                                Your registration is safe in our system. The ACM team can resend your confirmation email if required.
-                            </p>
-
-                        )}
-
-                    </div>
-
-
-                    <button
-                        type="button"
-                        className="toast-close"
-                        onClick={closeToast}
-                        aria-label="Close notification"
-                    >
-                        ×
-                    </button>
-
-
-                    {toastPhase === "visible" && (
-
-                        <div
-                            className="toast-progress marvel-progress"
-                            aria-hidden="true"
-                        ></div>
-
-                    )}
-
-                </div>
-
-            )}
-
-
-
-            {/* =================================================
-                HERO
-            ================================================= */}
-
-            <section
-                ref={heroRef}
-                className="hero"
-                style={{
-                    backgroundImage:
-                        `url(${cseHome})`,
-                }}
-            >
-
-                <div className="hero-overlay"></div>
-
-
-                <div className="hero-content">
-
-
-                    {/* HERO LOGO */}
-
-                    <div className="hero-logo-container">
-
-                        <img
-                            src={aceLogo}
-                            alt="ACM Logo"
-                            className="hero-logo"
-                        />
-
-                    </div>
-
-
-                    {/* HERO TITLE */}
-
-                    <h1>
-                        Welcome to ACM
+                    <h1 className="hero-main-title">
+                        Xcelerate-2K26
                     </h1>
 
-
-                    {/* TAGLINE */}
-
-                    <p className="tagline">
-                        Innovate. Lead. Excel.
-                    </p>
-
-
-                    {/* DESCRIPTION */}
-
-                    <p className="description">
-                        The Official CSE Student Club
-                        at SRKR Engineering College
-                    </p>
-
-
-                    {/* FEATURES */}
-
-                    <div className="features">
-
-                        <span>
-                            &lt;/&gt;&nbsp;
-                            CSE Powered
-                        </span>
-
-                        <span>
-                            ♧&nbsp;
-                            Student Driven
-                        </span>
-
-                        <span>
-                            ♜&nbsp;
-                            Future Focused
-                        </span>
-
+                    <div className="hero-tagline-motto">
+                        <span>Engage</span>
+                        <span className="dot" />
+                        <span>Explore</span>
+                        <span className="dot" />
+                        <span>Evolve</span>
                     </div>
 
+                    <p className="hero-lead-text">
+                        Welcome to the official registration portal for <strong>Xcelerate-2K26</strong> — a premier two-day technical symposium designed to explore emerging technologies, hands-on engineering skills, and career directions.
+                    </p>
 
-                    {/* REGISTER BUTTON */}
+                    <div className="hero-meta-strip">
+                        <div className="hero-meta-item">
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+                            2-Day Technical Event
+                        </div>
+                        <div className="hero-meta-item">
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 10v6M2 10l10-5 10 5-10 5z"></path><path d="M6 12v5c3 3 9 3 12 0v-5"></path></svg>
+                            Dept. of Computer Science &amp; Engineering
+                        </div>
+                        <div className="hero-meta-item">
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"></path></svg>
+                            SRKR Engineering College
+                        </div>
+                    </div>
 
-                    <button
-                        className="primary-button hero-button"
-                        onClick={scrollToForm}
-                    >
+                    <div className="hero-tracks-section">
+                        <div className="hero-tracks-label">What You’ll Explore 🔍</div>
+                        <div className="hero-tracks-grid">
+                            <div className="hero-track-card">
+                                <span className="track-icon-box">🤖</span>
+                                Artificial Intelligence &amp; AI for Engineering
+                            </div>
+                            <div className="hero-track-card">
+                                <span className="track-icon-box">🧠</span>
+                                Machine Learning
+                            </div>
+                            <div className="hero-track-card">
+                                <span className="track-icon-box">🛡️</span>
+                                IoT &amp; Cybersecurity
+                            </div>
+                            <div className="hero-track-card">
+                                <span className="track-icon-box">⚛️</span>
+                                Quantum Computing
+                            </div>
+                            <div className="hero-track-card">
+                                <span className="track-icon-box">🚀</span>
+                                DSA Roadmap
+                            </div>
+                        </div>
+                    </div>
 
-                        Register Now
+                    <div className="hero-scroll-cue">
+                        <span>Register in 3 Quick Steps Below</span>
+                        <svg className="cue-arrow-down" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                    </div>
+                </section>
 
-                        <span>
-                            →
-                        </span>
+                {/* PROGRESSIVE FORM CONTAINER */}
+                <section className="form-section">
+                    <div className="registration-card">
+                        {existingSubmission ? (
+                            <div className="already-submitted-container">
+                                <div className="submitted-status-icon">
+                                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8">
+                                        <polyline points="20 6 9 17 4 12"></polyline>
+                                    </svg>
+                                </div>
 
-                    </button>
+                                <div className="submitted-status-badge">
+                                    ✓ Registration Recorded
+                                </div>
 
-                </div>
+                                <h2 className="submitted-heading">
+                                    You’ve already registered for Xcelerate-2K26! 🎉
+                                </h2>
 
-            </section>
+                                <p className="submitted-desc">
+                                    Your response has already been submitted and confirmed from this device. Here is your official pass summary:
+                                </p>
 
+                                <div className="submitted-receipt-card">
+                                    <div className="submitted-receipt-row">
+                                        <span className="submitted-label">Attendee Name</span>
+                                        <span className="submitted-val">{existingSubmission.name}</span>
+                                    </div>
+                                    <div className="submitted-receipt-row">
+                                        <span className="submitted-label">Registration Number</span>
+                                        <span className="submitted-val">{existingSubmission.registrationNumber}</span>
+                                    </div>
+                                    <div className="submitted-receipt-row">
+                                        <span className="submitted-label">Branch &amp; Section</span>
+                                        <span className="submitted-val">{existingSubmission.branch} - Sec {existingSubmission.section}</span>
+                                    </div>
+                                    <div className="submitted-receipt-row">
+                                        <span className="submitted-label">Category</span>
+                                        <span className="submitted-val">
+                                            {existingSubmission.isAcmMember ? "ACM Body Member (2025–2029)" : "Regular Participant"}
+                                        </span>
+                                    </div>
+                                    {existingSubmission.qrToken && (
+                                        <div className="submitted-receipt-row">
+                                            <span className="submitted-label">Attendance Pass</span>
+                                            <span className="submitted-token-code">{existingSubmission.qrToken}</span>
+                                        </div>
+                                    )}
+                                    <div className="submitted-receipt-row">
+                                        <span className="submitted-label">Email Confirmation</span>
+                                        <span className="submitted-val">{existingSubmission.email}</span>
+                                    </div>
+                                </div>
 
+                                <div className="submitted-notice-box">
+                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+                                    <div>
+                                        {existingSubmission.isAcmMember ? (
+                                            <span>
+                                                Your confirmation email has been dispatched to <strong>{existingSubmission.email}</strong>.
+                                            </span>
+                                        ) : (
+                                            <span>
+                                                Your personalized <strong>Attendance QR Code</strong> has been sent to <strong>{existingSubmission.email}</strong>. Please present it on both days of the event.
+                                            </span>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        ) : (
+                            <>
+                                {/* STEPPER PROGRESS BAR */}
+                                <div className="stepper-nav">
+                            <div className="stepper-line-bg" />
+                            <div
+                                className="stepper-line-progress"
+                                style={{
+                                    width: currentStep === 1 ? "0%" : currentStep === 2 ? "50%" : "92%",
+                                }}
+                            />
 
-            {/* =================================================
-                REGISTRATION SECTION
-            ================================================= */}
-
-            <section
-                className="registration-section"
-                ref={formRef}
-            >
-
-
-                {/* FLOATING ACE — interactive */}
-
-                <div
-                    className={`floating-ace-layer ${
-                        formActive ? "paused" : ""
-                    }`}
-                >
-
-                    {ACE_ITEMS.map((item) => (
-
-                        <Fragment key={item.id}>
-
+                            {/* NODE 1 */}
                             <button
                                 type="button"
-                                className={`floating-ace ace-item ace-${item.id} ${
-                                    activeAcePopup === item.id
-                                        ? "active"
-                                        : ""
-                                }`}
-                                onClick={() =>
-                                    handleAceClick(item.id)
-                                }
-                                disabled={formActive}
-                                tabIndex={
-                                    formActive ? -1 : 0
-                                }
-                                aria-label={
-                                    `${item.title} — ${item.text}`
-                                }
+                                className={`step-node ${currentStep === 1 ? "active" : currentStep > 1 ? "completed" : ""}`}
+                                onClick={() => currentStep > 1 && setCurrentStep(1)}
                             >
-                                ACM
+                                <div className="step-bubble">
+                                    {currentStep > 1 ? "✓" : "1"}
+                                </div>
+                                <span className="step-title">Student Info</span>
                             </button>
 
-                            {activeAcePopup === item.id && (
+                            {/* NODE 2 */}
+                            <button
+                                type="button"
+                                className={`step-node ${currentStep === 2 ? "active" : currentStep > 2 ? "completed" : ""}`}
+                                onClick={() => currentStep > 2 && setCurrentStep(2)}
+                                disabled={currentStep < 2}
+                            >
+                                <div className="step-bubble">
+                                    {currentStep > 2 ? "✓" : "2"}
+                                </div>
+                                <span className="step-title">Membership</span>
+                            </button>
 
-                                <div
-                                    className={`ace-popup ace-popup-${item.id}`}
-                                    role="status"
-                                >
+                            {/* NODE 3 */}
+                            <button
+                                type="button"
+                                className={`step-node ${currentStep === 3 ? "active" : ""}`}
+                                disabled={currentStep < 3}
+                            >
+                                <div className="step-bubble">3</div>
+                                <span className="step-title">Payment &amp; Pass</span>
+                            </button>
+                        </div>
 
-                                    <strong>
-                                        {item.title}
-                                    </strong>
-
-                                    <p>
-                                        {item.text}
+                        {/* ========================================================
+                            SECTION 1: STUDENT DETAILS
+                        ======================================================== */}
+                        {currentStep === 1 && (
+                            <div className="step-pane">
+                                <div className="step-header-box">
+                                    <span className="step-header-tag">Step 01 of 03</span>
+                                    <h3 className="step-header-title">Student Academic Information</h3>
+                                    <p className="step-header-desc">
+                                        Please provide your genuine details as recorded in college.
                                     </p>
-
                                 </div>
 
-                            )}
-
-                        </Fragment>
-
-                    ))}
-
-                </div>
-
-
-
-                {/* REGISTRATION HEADING */}
-
-                <div className="section-heading">
-
-                    <span className="section-eyebrow">
-                        AVENGERS INITIATIVE • ACM 2026
-                    </span>
-
-                    <h2>
-                        FRESHERS ASSEMBLE TO ACM
-                    </h2>
-
-                    <p>
-                        With great power comes great responsibility. Step up, join the elite CSE assembly, and shape the future.
-                    </p>
-
-                </div>
-
-
-
-                {/* REGISTRATION FORM */}
-
-                <form
-                    className="registration-card"
-                    onSubmit={handleSubmit}
-                    onFocus={handleFormFocus}
-                    onBlur={handleFormBlur}
-                >
-
-
-                    {/* INTRO */}
-
-                    <div className="form-intro">
-
-                        <span className="form-badge">🛡️ AVENGERS ASSEMBLE PASS</span>
-
-                        <strong>
-                            Freshers Assemble to ACM
-                        </strong>
-
-                        <span>
-                            Fill in your hero dossier to claim your official ACM pass
-                        </span>
-
-                    </div>
-
-
-
-                    {/* SECTION 1: PERSONAL DETAILS */}
-                    <div className="form-section-header">
-                        <span className="section-step-num">01</span>
-                        <span className="section-step-title">Personal Details</span>
-                    </div>
-
-                    {/* NAME */}
-
-                    <div className="field">
-
-                        <label>
-                            <svg className="field-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
-                            Full Name <span className="req-star">*</span>
-                        </label>
-
-                        <input
-                            type="text"
-                            name="name"
-                            value={formData.name}
-                            onChange={handleChange}
-                            placeholder="Enter your full name"
-                            required
-                        />
-
-                    </div>
-
-
-
-                    {/* EMAIL */}
-
-                    <div className="field">
-
-                        <label>
-                            <svg className="field-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>
-                            Gmail Address <span className="req-star">*</span>
-                        </label>
-
-                        <div className="email-input-wrapper">
-
-                            <input
-                                type="text"
-                                name="email"
-                                value={formData.email}
-                                onChange={handleChange}
-                                placeholder="Enter Gmail username"
-                                required
-                            />
-
-                            <span className="gmail-suffix">
-                                @gmail.com
-                            </span>
-
-                        </div>
-
-                    </div>
-
-
-
-                    {/* PHONE + DEPARTMENT */}
-
-                    <div className="field-row">
-
-                        <div className="field">
-
-                            <label>
-                                <svg className="field-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path></svg>
-                                Phone Number <span className="req-star">*</span>
-                            </label>
-
-                            <input
-                                type="tel"
-                                name="phone"
-                                value={formData.phone}
-                                onChange={handleChange}
-                                placeholder="10-digit number"
-                                pattern="[0-9]{10}"
-                                maxLength="10"
-                                required
-                            />
-
-                        </div>
-
-
-                        <div className="field">
-
-                            <label>
-                                <svg className="field-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 10v6M2 10l10-5 10 5-10 5z"></path><path d="M6 12v5c3 3 9 3 12 0v-5"></path></svg>
-                                Department <span className="req-star">*</span>
-                            </label>
-
-                            <select
-                                name="branch"
-                                value={formData.branch}
-                                onChange={handleChange}
-                                required
-                            >
-
-                                <option value="">
-                                    Select Department
-                                </option>
-
-                                <option value="CSE">
-                                    CSE
-                                </option>
-
-                                <option value="AIML">
-                                    AIML
-                                </option>
-
-                                <option value="CIC">
-                                    CIC
-                                </option>
-
-                                <option value="IT">
-                                    IT
-                                </option>
-
-                                <option value="AIDS">
-                                    AIDS
-                                </option>
-
-                                <option value="CSBS">
-                                    CSBS
-                                </option>
-
-                                <option value="CSIT">
-                                    CSIT
-                                </option>
-
-                                <option value="CSD">
-                                    CSD
-                                </option>
-
-                                <option value="ECE">
-                                    ECE
-                                </option>
-
-                                <option value="EEE">
-                                    EEE
-                                </option>
-
-                                <option value="CIVIL">
-                                    Civil
-                                </option>
-
-                                <option value="MECH">
-                                    Mechanical
-                                </option>
-
-                            </select>
-
-                        </div>
-
-                    </div>
-
-
-                    {/* SECTION 2: OPTIONS & PREFERENCES */}
-                    <div className="form-section-header">
-                        <span className="section-step-num">02</span>
-                        <span className="section-step-title">Preferences & Year</span>
-                    </div>
-
-                    {/* GENDER + PAYMENT */}
-
-                    <div className="field-row">
-
-                        <div className="field">
-
-                            <label>
-                                <svg className="field-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2a5 5 0 1 0 5 5 5 5 0 0 0-5-5zm0 8a3 3 0 1 1 3-3 3 3 0 0 1-3 3z"></path><path d="M12 14c-5.33 0-8 2.67-8 4v2h16v-2c0-1.33-2.67-4-8-4z"></path></svg>
-                                Gender <span className="req-star">*</span>
-                            </label>
-
-                            <select
-                                name="gender"
-                                value={formData.gender}
-                                onChange={handleChange}
-                                required
-                            >
-
-                                <option value="">
-                                    Select Gender
-                                </option>
-
-                                <option value="Male">
-                                    Male
-                                </option>
-
-                                <option value="Female">
-                                    Female
-                                </option>
-
-                                <option value="Other">
-                                    Other
-                                </option>
-
-                            </select>
-
-                        </div>
-
-
-                        <div className="field">
-
-                            <label>
-                                <svg className="field-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"></rect><line x1="1" y1="10" x2="23" y2="10"></line></svg>
-                                Payment Mode <span className="req-star">*</span>
-                            </label>
-
-                            <select
-                                name="payment"
-                                value={formData.payment}
-                                onChange={handleChange}
-                                required
-                            >
-
-                                <option value="">
-                                    Select Mode
-                                </option>
-
-                                <option value="Online">
-                                    Online
-                                </option>
-
-                                <option value="Offline">
-                                    Offline
-                                </option>
-
-                            </select>
-
-                        </div>
-
-                    </div>
-
-
-
-                    {/* YEAR */}
-
-                    <div className="field">
-
-                        <label>
-                            <svg className="field-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
-                            Year of Study <span className="req-star">*</span>
-                        </label>
-
-                        <div className="radio-group">
-                            {["1st Year", "2nd Year", "3rd Year", "4th Year"].map((yr) => (
-                                <label key={yr} className="radio-option">
+                                {/* 1. FULL NAME */}
+                                <div className="field">
+                                    <label>
+                                        <svg className="field-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+                                        Full Name <span className="req-star">*</span>
+                                    </label>
                                     <input
-                                        type="radio"
-                                        name="year"
-                                        value={yr}
-                                        checked={formData.year === yr}
+                                        type="text"
+                                        name="name"
+                                        value={formData.name}
                                         onChange={handleChange}
+                                        placeholder="e.g. Gopala Krishna Saketh"
                                         required
                                     />
-                                    {yr}
-                                </label>
-                            ))}
-                        </div>
+                                </div>
 
-                    </div>
+                                {/* 2. EMAIL (CONCAT @gmail.com) */}
+                                <div className="field">
+                                    <label>
+                                        <svg className="field-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>
+                                        Gmail Address <span className="req-star">*</span>
+                                    </label>
+                                    <div className="email-input-wrapper">
+                                        <input
+                                            type="text"
+                                            name="email"
+                                            value={formData.email}
+                                            onChange={handleChange}
+                                            placeholder="Enter your Gmail username"
+                                            required
+                                        />
+                                        <span className="gmail-suffix">@gmail.com</span>
+                                    </div>
+                                    <span style={{ fontSize: "12px", color: "#64748b", marginTop: "4px", display: "block" }}>
+                                        Event pass and confirmation will be delivered to this Gmail address.
+                                    </span>
+                                </div>
 
+                                {/* 3. REGISTRATION NUMBER & 6. WHATSAPP (2 COLUMNS) */}
+                                <div className="grid-2-col">
+                                    <div className="field">
+                                        <label>
+                                            <svg className="field-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4" width="18" height="16" rx="2"></rect><line x1="7" y1="8" x2="17" y2="8"></line><line x1="7" y1="12" x2="17" y2="12"></line><line x1="7" y1="16" x2="13" y2="16"></line></svg>
+                                            Registration Number <span className="req-star">*</span>
+                                        </label>
+                                        <input
+                                            type="text"
+                                            name="registrationNumber"
+                                            value={formData.registrationNumber}
+                                            onChange={handleChange}
+                                            placeholder="e.g. 23B91A05XX"
+                                            style={{ textTransform: "uppercase" }}
+                                            required
+                                        />
+                                    </div>
 
+                                    <div className="field">
+                                        <label>
+                                            <svg className="field-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path></svg>
+                                            WhatsApp Number <span className="req-star">*</span>
+                                        </label>
+                                        <input
+                                            type="tel"
+                                            name="whatsappNumber"
+                                            value={formData.whatsappNumber}
+                                            onChange={handleChange}
+                                            placeholder="10-digit mobile number"
+                                            pattern="[0-9]{10}"
+                                            maxLength="10"
+                                            required
+                                        />
+                                    </div>
+                                </div>
 
-                    {/* ADMISSION MODE */}
+                                {/* 4. BRANCH & 5. SECTION (2 COLUMNS) */}
+                                <div className="grid-2-col">
+                                    <div className="field">
+                                        <label>
+                                            <svg className="field-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 10v6M2 10l10-5 10 5-10 5z"></path><path d="M6 12v5c3 3 9 3 12 0v-5"></path></svg>
+                                            Branch <span className="req-star">*</span>
+                                        </label>
+                                        <select
+                                            name="branch"
+                                            value={formData.branch}
+                                            onChange={handleChange}
+                                            required
+                                        >
+                                            <option value="">Select Branch</option>
+                                            {BRANCH_OPTIONS.map((branch) => (
+                                                <option key={branch} value={branch}>
+                                                    {branch}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </div>
 
-                    <div className="field">
+                                    <div className="field">
+                                        <label>
+                                            <svg className="field-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="9" y1="3" x2="9" y2="21"></line></svg>
+                                            Section <span className="req-star">*</span>
+                                        </label>
+                                        <select
+                                            name="section"
+                                            value={formData.section}
+                                            onChange={handleChange}
+                                            required
+                                        >
+                                            <option value="">Select Section</option>
+                                            {SECTION_OPTIONS.map((sec) => (
+                                                <option key={sec} value={sec}>
+                                                    Section {sec}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                </div>
 
-                        <label>
-                            <svg className="field-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><polyline points="16 11 18 13 22 9"></polyline></svg>
-                            Admission Mode <span className="req-star">*</span>
-                        </label>
+                                {/* ERROR NOTIFICATION */}
+                                {error && (
+                                    <div className="error-message" style={{ margin: "16px 0 8px" }}>
+                                        {error}
+                                    </div>
+                                )}
 
-                        <div className="radio-group">
-                            {["Normal", "Lateral"].map((m) => (
-                                <label key={m} className="radio-option">
-                                    <input
-                                        type="radio"
-                                        name="mode"
-                                        value={m}
-                                        checked={formData.mode === m}
-                                        onChange={handleChange}
-                                        required
-                                    />
-                                    {m}
-                                </label>
-                            ))}
-                        </div>
-
-                    </div>
-
-
-
-                    {/* GOODIES */}
-
-                    <div className="field">
-
-                        <label>
-                            <svg className="field-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="20 12 20 22 4 22 4 12"></polyline><rect x="2" y="7" width="20" height="5"></rect><line x1="12" y1="22" x2="12" y2="7"></line><path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z"></path><path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z"></path></svg>
-                            Goodies / Swag Kit <span className="req-star">*</span>
-                        </label>
-
-                        <div className="radio-group">
-
-                            <label className="radio-option">
-
-                                <input
-                                    type="radio"
-                                    name="goodies"
-                                    value="Yes"
-                                    checked={
-                                        formData.goodies ===
-                                        "Yes"
-                                    }
-                                    onChange={handleChange}
-                                    required
-                                />
-
-                                Received
-
-                            </label>
-
-
-                            <label className="radio-option">
-
-                                <input
-                                    type="radio"
-                                    name="goodies"
-                                    value="No"
-                                    checked={
-                                        formData.goodies ===
-                                        "No"
-                                    }
-                                    onChange={handleChange}
-                                />
-
-                                Not Received
-
-                            </label>
-
-                        </div>
-
-                    </div>
-
-
-
-                    {/* TYPE OF REGISTRATION */}
-
-                    <div className="field">
-
-                        <label>
-                            <svg className="field-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M22 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
-                            Type of Registration <span className="req-star">*</span>
-                        </label>
-
-                        <div className="radio-group">
-
-                            <label className={`radio-option ${formData.registrationType === "ACM India" ? "selected" : ""}`}>
-
-                                <input
-                                    type="radio"
-                                    name="registrationType"
-                                    value="ACM India"
-                                    checked={
-                                        formData.registrationType === "ACM India"
-                                    }
-                                    onChange={handleChange}
-                                    required
-                                />
-
-                                ACM India
-
-                            </label>
-
-
-                            <label className={`radio-option ${formData.registrationType === "Local Body Chapter" ? "selected" : ""}`}>
-
-                                <input
-                                    type="radio"
-                                    name="registrationType"
-                                    value="Local Body Chapter"
-                                    checked={
-                                        formData.registrationType === "Local Body Chapter"
-                                    }
-                                    onChange={handleChange}
-                                />
-
-                                Local Body Chapter
-
-                            </label>
-
-                        </div>
-
-                    </div>
-
-
-
-                    {/* ERROR */}
-
-                    {error && (
-
-                        <div className="error-message">
-                            {error}
-                        </div>
-
-                    )}
-
-
-
-                    {/* SUBMIT */}
-
-                    <button
-                        type="submit"
-                        className="submit-button"
-                        disabled={loading}
-                    >
-
-                        {loading ? (
-                            <span className="submit-loading">
-                                <span className="spinner"></span> Processing Registration...
-                            </span>
-                        ) : (
-                            <span className="submit-content">
-                                Freshers Assemble to ACM
-                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
-                            </span>
+                                {/* STEP 1 ACTION BUTTON */}
+                                <div className="step-nav-row">
+                                    <button
+                                        type="button"
+                                        className="btn-nav-next"
+                                        onClick={handleNextFromStep1}
+                                    >
+                                        Continue to Chapter Status
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                                    </button>
+                                </div>
+                            </div>
                         )}
 
-                    </button>
-
-                </form>
-
-            </section>
-
-
-
-            {/* =================================================
-                ABOUT / ACE STORY
-            ================================================= */}
-
-            <section
-                ref={aboutRef}
-                className="ace-story"
-            >
-
-
-                {/* ABOUT HEADING */}
-
-                <div className="story-heading">
-
-                    <span className="story-eyebrow">
-                        THE ACM COMMUNITY · SINCE 2006
-                    </span>
-
-                    <h2>
-                        More Than Two Decades.
-                    </h2>
-
-                    <p>
-                        For over 20 years, ACM has been
-                        carried forward by one generation
-                        of CSE students after another.
-                        What you see here is just the
-                        latest handoff in a much longer
-                        story.
-                    </p>
-
-                </div>
-
-
-
-                {/* STORY CONTENT */}
-
-                <div className="story-container">
-
-
-                    {/* LEFT: STORY TEXT */}
-
-                    <div className="story-text">
-
-                        <h3>
-                            Built by Students.
-                            <br />
-                            Carried Forward by Students.
-                        </h3>
-
-
-                        <p>
-                            Since 2006, ACM has grown through
-                            the ideas, efforts, and experience
-                            of every batch that has passed
-                            through it — far more generations
-                            than any single photo could
-                            ever hold.
-                        </p>
-
-
-                        <p>
-                            These two photos capture the ongoing journey of ACM, passing the torch from one generation of CSE leaders to the next.
-                        </p>
-
-
-
-                        {/* TIMELINE */}
-
-                        <div className="story-timeline">
-
-                            <div className="timeline-item">
-
-                                <span className="timeline-dot"></span>
-
-                                <div>
-
-                                    <strong>
-                                        Previous Leadership
-                                    </strong>
-
-                                    <p>
-                                        The outgoing team who paved the way.
+                        {/* ========================================================
+                            SECTION 2: ACM BODY MEMBERSHIP SELECTION
+                        ======================================================== */}
+                        {currentStep === 2 && (
+                            <div className="step-pane">
+                                <div className="step-header-box">
+                                    <span className="step-header-tag">Step 02 of 03</span>
+                                    <h3 className="step-header-title">ACM Chapter Membership</h3>
+                                    <p className="step-header-desc">
+                                        Select whether you are a registered ACM Council Member or a General Attendee.
                                     </p>
-
                                 </div>
 
-                            </div>
+                                <div className="field">
+                                    <label style={{ fontSize: "14px", marginBottom: "12px" }}>
+                                        Are you an active ACM Body Member? <span className="req-star">*</span>
+                                    </label>
+                                    <div className="acm-member-select-grid">
+                                        <div
+                                            className={`acm-member-card ${!formData.isAcmMember ? "active" : ""}`}
+                                            onClick={() => handleAcmToggle(false)}
+                                        >
+                                            <input
+                                                type="radio"
+                                                name="isAcmMember"
+                                                checked={!formData.isAcmMember}
+                                                onChange={() => handleAcmToggle(false)}
+                                            />
+                                            <div className="acm-card-body">
+                                                <h4>No, Regular Participant</h4>
+                                                <p>I am attending the two-day symposium (A personalized Attendance QR pass will be emailed to you).</p>
+                                            </div>
+                                        </div>
 
-
-                            <div className="timeline-line"></div>
-
-
-                            <div className="timeline-item">
-
-                                <span className="timeline-dot active"></span>
-
-                                <div>
-
-                                    <strong>
-                                        Current Team
-                                    </strong>
-
-                                    <p>
-                                        Continuing the legacy and driving innovation forward.
-                                    </p>
-
+                                        <div
+                                            className={`acm-member-card ${formData.isAcmMember ? "active" : ""}`}
+                                            onClick={() => handleAcmToggle(true)}
+                                        >
+                                            <input
+                                                type="radio"
+                                                name="isAcmMember"
+                                                checked={formData.isAcmMember}
+                                                onChange={() => handleAcmToggle(true)}
+                                            />
+                                            <div className="acm-card-body">
+                                                <h4>Yes, ACM Body Member</h4>
+                                                <p>Batch 2025–2029 (Requires active ACM WhatsApp group screenshot verification).</p>
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
 
-                            </div>
+                                {error && (
+                                    <div className="error-message" style={{ margin: "16px 0 8px" }}>
+                                        {error}
+                                    </div>
+                                )}
 
-                        </div>
-
-                    </div>
-
-
-
-                    {/* =================================================
-                        RIGHT: GENERATION PHOTO STORY
-                    ================================================= */}
-
-                    <div className="story-visual">
-
-                        <div className="generation-gallery">
-
-
-                            {/* TEAM PHOTO 1 */}
-
-                            <div className="generation-card previous-generation">
-
-                                <img
-                                    src={previousTeam}
-                                    alt="ACM leadership team"
-                                />
-
-                                <div className="generation-label">
-
-
-                                    ACM SBM 2025
-
-                                </div>
-
-                            </div>
-
-
-
-                            {/* CONNECTOR */}
-
-                            <div
-                                className="generation-path"
-                                aria-hidden="true"
-                            >
-
-                                <svg
-                                    viewBox="0 0 110 110"
-                                    fill="none"
-                                    xmlns="http://www.w3.org/2000/svg"
-                                >
-
-                                    <circle
-                                        className="path-dot"
-                                        cx="12"
-                                        cy="12"
-                                        r="4"
-                                    />
-
-                                    <path
-                                        className="path-curve"
-                                        d="M 17 17 Q 55 55 90 88"
-                                    />
-
-                                    <circle
-                                        className="path-arrow-circle"
-                                        cx="96"
-                                        cy="94"
-                                        r="16"
-                                    />
-
-                                    <text
-                                        x="96"
-                                        y="99"
-                                        textAnchor="middle"
-                                        className="path-arrow-glyph"
+                                {/* STEP 2 BUTTONS */}
+                                <div className="step-nav-row">
+                                    <button
+                                        type="button"
+                                        className="btn-nav-back"
+                                        onClick={() => {
+                                            setError("");
+                                            setCurrentStep(1);
+                                        }}
                                     >
-                                        →
-                                    </text>
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="15 18 9 12 15 6"></polyline></svg>
+                                        Back to Info
+                                    </button>
 
-                                </svg>
-
+                                    <button
+                                        type="button"
+                                        className="btn-nav-next"
+                                        onClick={handleNextFromStep2}
+                                    >
+                                        Continue to Payment &amp; Pass
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                                    </button>
+                                </div>
                             </div>
+                        )}
 
-
-
-                            {/* TEAM PHOTO 2 */}
-
-                            <div className="generation-card current-generation">
-
-                                <img
-                                    src={currentTeam}
-                                    alt="ACM team"
-                                />
-
-                                <div className="generation-label">
-                                        ACM SBM 2026
-                                    
-
+                        {/* ========================================================
+                            SECTION 3: PAYMENT, PROOF & DECLARATION
+                        ======================================================== */}
+                        {currentStep === 3 && (
+                            <form onSubmit={handleSubmit} noValidate className="step-pane">
+                                <div className="step-header-box">
+                                    <span className="step-header-tag">Step 03 of 03</span>
+                                    <h3 className="step-header-title">Registration Payment &amp; Confirmation</h3>
+                                    <p className="step-header-desc">
+                                        Scan the QR code, upload payment proof, and complete your registration.
+                                    </p>
                                 </div>
 
-                            </div>
+                                {/* 1. PAYMENT QR CARD (FOR BOTH YES & NO) */}
+                                <div className="payment-qr-card">
+                                    <h4 style={{ fontSize: "16px", fontWeight: "700", color: "#0f172a", marginBottom: "4px" }}>
+                                        Scan &amp; Pay via UPI
+                                    </h4>
+                                    <p style={{ fontSize: "13px", color: "#64748b", marginBottom: "8px" }}>
+                                        Google Pay &bull; PhonePe &bull; Paytm &bull; BHIM
+                                    </p>
 
+                                    <div className="qr-placeholder-box">
+                                        <svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+                                            <rect x="3" y="3" width="7" height="7"></rect>
+                                            <rect x="14" y="3" width="7" height="7"></rect>
+                                            <rect x="14" y="14" width="7" height="7"></rect>
+                                            <rect x="3" y="14" width="7" height="7"></rect>
+                                            <line x1="7" y1="17" x2="7" y2="17.01"></line>
+                                            <line x1="17" y1="7" x2="17" y2="7.01"></line>
+                                        </svg>
+                                        <span className="qr-placeholder-text">PAYMENT QR CODE</span>
+                                        <span style={{ fontSize: "10px", color: "#94a3b8", marginTop: "2px" }}>[Placeholder]</span>
+                                    </div>
+
+                                    <div className="upi-id-badge">
+                                        UPI ID: srkr.acm@upi
+                                    </div>
+                                    <p style={{ fontSize: "12px", color: "#64748b", marginTop: "8px" }}>
+                                        Make payment, copy the 12-digit UTR ID, and upload the transaction screenshot below.
+                                    </p>
+                                </div>
+
+                                {/* 2. IF ACM MEMBER: WHATSAPP GROUP SCREENSHOT (MAX 1MB) */}
+                                {formData.isAcmMember && (
+                                    <div className="file-upload-block">
+                                        <label>
+                                            <span>
+                                                ACM Body Member (2025–2029) WhatsApp Group Screenshot <span className="req-star">*</span>
+                                            </span>
+                                            <span className="file-size-badge">Max 1 MB</span>
+                                        </label>
+
+                                        <input
+                                            type="file"
+                                            accept="image/png, image/jpeg, image/jpg, image/webp"
+                                            ref={acmFileInputRef}
+                                            style={{ display: "none" }}
+                                            onChange={handleAcmScreenshotChange}
+                                        />
+
+                                        {!previews.acmGroup ? (
+                                            <div
+                                                className="file-dropzone"
+                                                onClick={() => acmFileInputRef.current?.click()}
+                                            >
+                                                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                                                <div className="file-dropzone-prompt">
+                                                    <strong>Click to upload</strong> or drag &amp; drop WhatsApp group screenshot
+                                                </div>
+                                                <span style={{ fontSize: "11px", color: "#94a3b8" }}>
+                                                    PNG, JPG or WEBP (Max 1 MB)
+                                                </span>
+                                            </div>
+                                        ) : (
+                                            <div className="file-preview-card">
+                                                <img src={previews.acmGroup.url} alt="Group Screenshot Preview" className="preview-thumb" />
+                                                <div className="preview-meta">
+                                                    <div className="preview-name">{previews.acmGroup.name}</div>
+                                                    <div className="preview-size">{previews.acmGroup.size} &bull; Ready</div>
+                                                </div>
+                                                <button type="button" className="preview-remove-btn" onClick={removeAcmScreenshot}>
+                                                    Remove
+                                                </button>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+
+                                {/* 3. PAYMENT SCREENSHOT (MAX 10MB) - FOR BOTH */}
+                                <div className="file-upload-block">
+                                    <label>
+                                        <span>
+                                            Payment Transaction Screenshot <span className="req-star">*</span>
+                                        </span>
+                                        <span className="file-size-badge">Max 10 MB</span>
+                                    </label>
+
+                                    <input
+                                        type="file"
+                                        accept="image/png, image/jpeg, image/jpg, image/webp"
+                                        ref={paymentFileInputRef}
+                                        style={{ display: "none" }}
+                                        onChange={handlePaymentScreenshotChange}
+                                    />
+
+                                    {!previews.payment ? (
+                                        <div
+                                            className="file-dropzone"
+                                            onClick={() => paymentFileInputRef.current?.click()}
+                                        >
+                                            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
+                                            <div className="file-dropzone-prompt">
+                                                <strong>Click to upload</strong> or drag &amp; drop Payment Screenshot
+                                            </div>
+                                            <span style={{ fontSize: "11px", color: "#94a3b8" }}>
+                                                PNG, JPG or WEBP (Max 10 MB)
+                                            </span>
+                                        </div>
+                                    ) : (
+                                        <div className="file-preview-card">
+                                            <img src={previews.payment.url} alt="Payment Screenshot Preview" className="preview-thumb" />
+                                            <div className="preview-meta">
+                                                <div className="preview-name">{previews.payment.name}</div>
+                                                <div className="preview-size">{previews.payment.size} &bull; Ready</div>
+                                            </div>
+                                            <button type="button" className="preview-remove-btn" onClick={removePaymentScreenshot}>
+                                                Remove
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* 4. UNIQUE TRANSACTION REFERENCE (UTR) ID */}
+                                <div className="field" style={{ marginTop: "18px" }}>
+                                    <label>
+                                        <svg className="field-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"></rect><line x1="1" y1="10" x2="23" y2="10"></line></svg>
+                                        Unique Transaction Reference (UTR) ID <span className="req-star">*</span>
+                                    </label>
+                                    <input
+                                        type="text"
+                                        name="utrId"
+                                        value={formData.utrId}
+                                        onChange={handleChange}
+                                        placeholder="e.g. 4028XXXXXXXX or UPI Reference Number"
+                                        style={{ textTransform: "uppercase" }}
+                                        required
+                                    />
+                                </div>
+
+                                {/* 5. DECLARATION CHECKBOX */}
+                                <div className="declaration-container">
+                                    <label className="declaration-label">
+                                        <input
+                                            type="checkbox"
+                                            name="declarationConfirmed"
+                                            checked={formData.declarationConfirmed}
+                                            onChange={handleChange}
+                                            required
+                                        />
+                                        <span>
+                                            {formData.isAcmMember
+                                                ? "I confirm that I am an active ACM Body Member (2025–2029) and the submitted details, WhatsApp group screenshot, and payment proof are genuine."
+                                                : "I confirm that the details provided, registration information, and payment screenshot are genuine and authentic."}
+                                        </span>
+                                    </label>
+                                </div>
+
+                                {/* ERROR BANNER */}
+                                {error && (
+                                    <div className="error-message" style={{ margin: "16px 0 8px" }}>
+                                        {error}
+                                    </div>
+                                )}
+
+                                {/* STEP 3 ACTION BUTTONS */}
+                                <div className="step-nav-row">
+                                    <button
+                                        type="button"
+                                        className="btn-nav-back"
+                                        onClick={() => {
+                                            setError("");
+                                            setCurrentStep(2);
+                                        }}
+                                        disabled={loading}
+                                    >
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="15 18 9 12 15 6"></polyline></svg>
+                                        Back to Status
+                                    </button>
+
+                                    <button
+                                        type="submit"
+                                        className="btn-nav-next"
+                                        disabled={loading}
+                                        style={{ background: "linear-gradient(135deg, #16a34a, #15803d)", boxShadow: "0 4px 16px rgba(22, 163, 74, 0.4)" }}
+                                    >
+                                        {loading ? (
+                                            <span style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                                                <span style={{ width: "16px", height: "16px", border: "2px solid #ffffff", borderTopColor: "transparent", borderRadius: "50%", display: "inline-block", animation: "spin 0.8s linear infinite" }} />
+                                                Processing...
+                                            </span>
+                                        ) : (
+                                            <>
+                                                Complete Registration
+                                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                                            </>
+                                        )}
+                                    </button>
+                                </div>
+                            </form>
+                        )}
+                            </>
+                        )}
+                    </div>
+                </section>
+            </main>
+
+            {/* SUCCESS CONFIRMATION MODAL */}
+            {successData && (
+                <div className="success-modal-backdrop">
+                    <div className="success-modal-card">
+                        <div className="success-icon-badge">
+                            <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                                <polyline points="20 6 9 17 4 12"></polyline>
+                            </svg>
                         </div>
 
-                    </div>
+                        <h2 style={{ fontSize: "22px", fontWeight: "800", color: "#0f172a", marginBottom: "8px" }}>
+                            Registration Successful! 🎉
+                        </h2>
 
+                        <p style={{ fontSize: "14px", color: "#64748b", margin: "0 0 16px" }}>
+                            Welcome to <strong>Xcelerate-2K26</strong>!
+                        </p>
+
+                        <div className="success-receipt-details">
+                            <div className="receipt-row">
+                                <span className="receipt-label">Student Name</span>
+                                <span className="receipt-val">{successData.name}</span>
+                            </div>
+                            <div className="receipt-row">
+                                <span className="receipt-label">Reg Number</span>
+                                <span className="receipt-val">{successData.registrationNumber}</span>
+                            </div>
+                            <div className="receipt-row">
+                                <span className="receipt-label">Branch &amp; Section</span>
+                                <span className="receipt-val">{successData.branch} - Sec {successData.section}</span>
+                            </div>
+                            <div className="receipt-row">
+                                <span className="receipt-label">Category</span>
+                                <span className="receipt-val">
+                                    {successData.isAcmMember ? "ACM Body Member (2025–2029)" : "Regular Attendee"}
+                                </span>
+                            </div>
+                            {successData.qrToken && (
+                                <div className="receipt-row">
+                                    <span className="receipt-label">Attendance Pass</span>
+                                    <span className="receipt-val" style={{ color: "#2563eb", fontFamily: "monospace" }}>
+                                        {successData.qrToken}
+                                    </span>
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="success-email-notice">
+                            {successData.isAcmMember ? (
+                                <span>
+                                    📧 Confirmation email has been dispatched to <strong>{successData.email}</strong>.
+                                </span>
+                            ) : (
+                                <span>
+                                    📲 Your personalized <strong>Attendance QR Code</strong> has been generated and sent to <strong>{successData.email}</strong> for scanning on both days!
+                                </span>
+                            )}
+                        </div>
+
+                        <button
+                            type="button"
+                            className="success-modal-btn"
+                            onClick={() => setSuccessData(null)}
+                        >
+                            Close &amp; View Pass
+                        </button>
+                    </div>
                 </div>
+            )}
 
-
-
-                {/* =================================================
-                    OFFICIAL FOOTER — letters/words animate in
-                    once this footer scrolls into view
-                ================================================= */}
-
-                <div
-                    ref={footerRef}
-                    className={`story-footer ${
-                        footerInView ? "in-view" : ""
-                    }`}
-                >
-
-                    <div className="story-footer-brand">
-
-                        <span className="footer-ace-mark">
-                            {splitLetters("ACM", 0)}
-                        </span>
-
-                        <p>
-                            {splitWords(
-                                "Association for Computing Machinery",
-                                0.2
-                            )}
-                        </p>
-
-                    </div>
-
-                    <div className="story-footer-meta">
-
-                        <p>
-                            {splitWords(
-                                "SRKR Engineering College · Est. 2006",
-                                0.45
-                            )}
-                        </p>
-
-                        <p>
-                            {splitWords(
-                                "Carrying forward 20+ years of student " +
-                                "leadership in Computer Science & Engineering.",
-                                0.6
-                            )}
-                        </p>
-
-                    </div>
-
+            {/* SITE FOOTER */}
+            <footer className="site-footer">
+                <div className="footer-inner">
+                    <p style={{ fontSize: "13px", color: "#64748b" }}>
+                        &copy; 2026 SRKR ACM Student Chapter &bull; Department of Computer Science &amp; Engineering
+                    </p>
                 </div>
-
-            </section>
-
-            {/* COSMIC PLANET HORIZON LANDSCAPE */}
-            <div className="planet-horizon-wrapper" aria-hidden="true">
-                <div className="planet-horizon-arc" />
-            </div>
-
+            </footer>
         </div>
-
     );
 }
-
-
-export default App;

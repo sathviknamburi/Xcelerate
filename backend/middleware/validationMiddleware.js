@@ -1,5 +1,27 @@
 import Joi from "joi";
 
+const BRANCHES = [
+    "CSE",
+    "AIML",
+    "CIC",
+    "IT",
+    "AIDS",
+    "CSBS",
+    "CSIT",
+    "CSD",
+    "ECE",
+    "EEE",
+    "Mechanical",
+    "Civil",
+];
+
+const SECTIONS = ["A", "B", "C", "D", "E", "F"];
+
+// Approx max base64 size helpers
+// Base64 is ~1.33x the original binary size
+const MAX_1MB_BASE64_LENGTH = Math.ceil(1 * 1024 * 1024 * 1.37);
+const MAX_10MB_BASE64_LENGTH = Math.ceil(10 * 1024 * 1024 * 1.37);
+
 const registrationSchema = Joi.object({
     name: Joi.string()
         .trim()
@@ -29,119 +51,124 @@ const registrationSchema = Joi.object({
         .required()
         .messages({
             "string.empty": "Gmail address is required.",
-            "string.gmailOnly": "Only Gmail addresses are allowed.",
+            "string.gmailOnly": "Only @gmail.com addresses are allowed.",
             "string.pattern.base": "Please provide a valid Gmail address.",
             "any.required": "Gmail address is required.",
         }),
 
-    phone: Joi.string()
+    registrationNumber: Joi.string()
+        .trim()
+        .uppercase()
+        .min(3)
+        .max(20)
+        .required()
+        .messages({
+            "string.empty": "Registration number is required.",
+            "any.required": "Registration number is required.",
+        }),
+
+    branch: Joi.string()
+        .valid(...BRANCHES)
+        .required()
+        .messages({
+            "any.only": `Branch must be one of: ${BRANCHES.join(", ")}.`,
+            "any.required": "Branch is required.",
+        }),
+
+    section: Joi.string()
+        .valid(...SECTIONS)
+        .required()
+        .messages({
+            "any.only": `Section must be one of: ${SECTIONS.join(", ")}.`,
+            "any.required": "Section is required.",
+        }),
+
+    whatsappNumber: Joi.string()
         .trim()
         .pattern(/^[0-9]{10}$/)
         .required()
         .messages({
-            "string.empty": "Phone number is required.",
-            "string.pattern.base": "Phone number must contain exactly 10 digits.",
-            "any.required": "Phone number is required.",
+            "string.empty": "WhatsApp number is required.",
+            "string.pattern.base": "WhatsApp number must contain exactly 10 digits.",
+            "any.required": "WhatsApp number is required.",
         }),
 
-    branch: Joi.string()
+    isAcmMember: Joi.boolean()
+        .required()
+        .messages({
+            "any.required": "Please indicate if you are an ACM Body Member.",
+        }),
+
+    acmGroupScreenshot: Joi.string()
+        .allow("", null)
+        .when("isAcmMember", {
+            is: true,
+            then: Joi.string()
+                .required()
+                .max(MAX_1MB_BASE64_LENGTH)
+                .messages({
+                    "string.empty": "ACM WhatsApp group screenshot is required for ACM Body Members.",
+                    "string.max": "ACM WhatsApp group screenshot exceeds 1MB limit.",
+                    "any.required": "ACM WhatsApp group screenshot is required for ACM Body Members.",
+                }),
+            otherwise: Joi.string().allow("", null).optional(),
+        }),
+
+    paymentScreenshot: Joi.string()
+        .required()
+        .max(MAX_10MB_BASE64_LENGTH)
+        .messages({
+            "string.empty": "Payment screenshot is required.",
+            "string.max": "Payment screenshot exceeds 10MB limit.",
+            "any.required": "Payment screenshot is required.",
+        }),
+
+    utrId: Joi.string()
         .trim()
+        .uppercase()
+        .min(4)
+        .max(50)
         .required()
         .messages({
-            "string.empty": "Department is required.",
-            "any.required": "Department is required.",
+            "string.empty": "UTR / Transaction Reference ID is required.",
+            "any.required": "UTR / Transaction Reference ID is required.",
         }),
 
-    gender: Joi.string()
-        .valid("Male", "Female", "Other")
+    declarationConfirmed: Joi.boolean()
+        .valid(true)
         .required()
         .messages({
-            "any.only": "Invalid gender.",
-            "any.required": "Gender is required.",
-        }),
-
-    year: Joi.string()
-        .valid("1st Year", "2nd Year", "3rd Year", "4th Year", "1st", "2nd", "3rd", "4th", "2nd Year L.E")
-        .required()
-        .messages({
-            "any.only": "Invalid year of study.",
-            "any.required": "Year of study is required.",
-        }),
-
-    mode: Joi.string()
-        .valid("Normal", "Lateral", "normal", "lateral")
-        .default("Normal")
-        .messages({
-            "any.only": "Invalid admission mode. Must be Normal or Lateral.",
-        }),
-
-    registrationType: Joi.string()
-        .valid("ACM India", "Local Body Chapter", "ACM india", "local body chapter")
-        .required()
-        .messages({
-            "any.only": "Invalid type of registration.",
-            "any.required": "Type of registration is required.",
-        }),
-
-    payment: Joi.string()
-        .valid("Online", "Offline")
-        .required()
-        .messages({
-            "any.only": "Invalid payment mode.",
-            "any.required": "Payment mode is required.",
-        }),
-
-    goodies: Joi.string()
-        .valid("Yes", "No")
-        .required()
-        .messages({
-            "any.only": "Invalid goodies selection.",
-            "any.required": "Please select whether you want goodies.",
+            "any.only": "You must confirm the declaration to proceed.",
+            "any.required": "You must confirm the declaration to proceed.",
         }),
 });
 
 export const validateRegistration = (req, res, next) => {
-    // Format Name to Title Case (e.g. "gopala krishna saketh" -> "Gopala Krishna Saketh")
-    if (typeof req.body.name === "string") {
-        req.body.name = req.body.name
-            .toLowerCase()
-            .split(/\s+/)
-            .filter(Boolean)
-            .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-            .join(" ");
-    }
-    // Support alias if passed as typeOfRegistration
-    if (!req.body.registrationType && req.body.typeOfRegistration) {
-        req.body.registrationType = req.body.typeOfRegistration;
-    }
-
-    // Normalize registrationType
-    if (typeof req.body.registrationType === "string") {
-        const lower = req.body.registrationType.trim().toLowerCase();
-        if (lower === "acm india") {
-            req.body.registrationType = "ACM India";
-        } else if (lower === "local body chapter") {
-            req.body.registrationType = "Local Body Chapter";
+    // Normalize branch case
+    if (typeof req.body.branch === "string") {
+        const inputBranch = req.body.branch.trim();
+        const matched = BRANCHES.find(
+            (b) => b.toLowerCase() === inputBranch.toLowerCase()
+        );
+        if (matched) {
+            req.body.branch = matched;
         }
     }
 
-    // Normalize year
-    if (typeof req.body.year === "string") {
-        const y = req.body.year.trim().toLowerCase();
-        if (y === "1st" || y === "1st year") req.body.year = "1st Year";
-        else if (y === "2nd" || y === "2nd year") req.body.year = "2nd Year";
-        else if (y === "3rd" || y === "3rd year") req.body.year = "3rd Year";
-        else if (y === "4th" || y === "4th year") req.body.year = "4th Year";
-        else if (y === "2nd year l.e") req.body.year = "2nd Year";
+    // Normalize section case
+    if (typeof req.body.section === "string") {
+        req.body.section = req.body.section.trim().toUpperCase();
     }
 
-    // Normalize mode
-    if (typeof req.body.mode === "string") {
-        const m = req.body.mode.trim().toLowerCase();
-        if (m === "lateral") req.body.mode = "Lateral";
-        else req.body.mode = "Normal";
-    } else {
-        req.body.mode = "Normal";
+    // Coerce isAcmMember if passed as string "Yes"/"No" or "true"/"false"
+    if (typeof req.body.isAcmMember === "string") {
+        const val = req.body.isAcmMember.trim().toLowerCase();
+        req.body.isAcmMember = val === "yes" || val === "true";
+    }
+
+    // Coerce declarationConfirmed if passed as string
+    if (typeof req.body.declarationConfirmed === "string") {
+        req.body.declarationConfirmed = req.body.declarationConfirmed === "true";
     }
 
     const { error, value } = registrationSchema.validate(req.body, {

@@ -1,3 +1,7 @@
+import crypto from "crypto";
+import Registration from "../models/Registration.js";
+import { sendRegistrationEmailWithRetry } from "./emailService.js";
+
 const formatTitleCase = (str) => {
     if (!str) return "";
     return String(str)
@@ -8,122 +12,100 @@ const formatTitleCase = (str) => {
         .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
         .join(" ");
 };
-import Registration from "../models/Registration.js";
-import { sendWelcomeEmailWithRetry } from "./emailService.js";
-import { generateAceId } from "./aceIdService.js";
-import { generateCertificate, cleanupCertificate } from "./certificateService.js";
 
 export const registerUser = async (data) => {
     const {
         name: rawName,
-        email,
-        phone,
+        email: rawEmail,
+        registrationNumber: rawRegNo,
         branch,
-        gender,
-        year,
-        mode = "Normal",
-        payment,
-        goodies,
-        registrationType = data.typeOfRegistration || "ACM India",
+        section,
+        whatsappNumber,
+        isAcmMember = false,
+        acmGroupScreenshot = null,
+        paymentScreenshot,
+        utrId: rawUtrId,
+        declarationConfirmed = true,
     } = data;
 
     const name = formatTitleCase(rawName);
+    const email = String(rawEmail).trim().toLowerCase();
+    const registrationNumber = String(rawRegNo).trim().toUpperCase();
+    const utrId = String(rawUtrId).trim().toUpperCase();
 
     // Check duplicate email
     const existingEmail = await Registration.findOne({ email });
     if (existingEmail) {
-        const error = new Error("This email is already registered.");
+        const error = new Error("This email is already registered for Xcelerate-2K26.");
         error.statusCode = 409;
         throw error;
     }
 
-    // Check duplicate phone
-    const existingPhone = await Registration.findOne({ phone });
-    if (existingPhone) {
-        const error = new Error("This phone number is already registered.");
+    // Check duplicate registration number
+    const existingReg = await Registration.findOne({ registrationNumber });
+    if (existingReg) {
+        const error = new Error(`Registration Number ${registrationNumber} is already registered.`);
         error.statusCode = 409;
         throw error;
     }
 
-    // Generate ACE ID
-    const aceId = await generateAceId();
+    // Check duplicate UTR ID
+    const existingUtr = await Registration.findOne({ utrId });
+    if (existingUtr) {
+        const error = new Error(`UTR / Transaction Reference ${utrId} has already been submitted.`);
+        error.statusCode = 409;
+        throw error;
+    }
 
-    // Save registration
+    // Generate unique attendance QR token for non-ACM attendees
+    let qrToken = null;
+    if (!isAcmMember) {
+        qrToken = `XCEL-${registrationNumber}-${crypto.randomBytes(3).toString("hex").toUpperCase()}`;
+    }
+
+    // Create registration record
     const registration = await Registration.create({
-        aceId,
         name,
         email,
-        phone,
+        registrationNumber,
         branch,
-        gender,
-        year,
-        mode,
-        registrationType,
-        payment,
-        goodies,
+        section,
+        whatsappNumber,
+        isAcmMember,
+        acmGroupScreenshot: isAcmMember ? acmGroupScreenshot : null,
+        paymentScreenshot,
+        utrId,
+        declarationConfirmed: Boolean(declarationConfirmed),
+        qrToken,
     });
 
-    // Generate PDF Certificate
-    let certificatePath = null;
+    // Send confirmation email via Brevo
     try {
-        certificatePath = await generateCertificate({
+        const sent = await sendRegistrationEmailWithRetry({
             name,
             email,
-            phone,
-            aceId,
+            isAcmMember,
+            qrToken,
+            registrationNumber,
             branch,
-            gender,
-            year,
-            mode,
-            registrationType,
-            payment,
-            goodies,
-        });
-    } catch (certError) {
-        console.error(
-            `Failed to generate certificate for ${email}:`,
-            certError.message
-        );
-    }
-
-    // Trigger certificate + email workflow
-    try {
-        const sent = await sendWelcomeEmailWithRetry({
-            name,
-            email,
-            phone,
-            aceId,
-            branch,
-            gender,
-            year,
-            mode,
-            payment,
-            goodies,
-            registrationType: registration.registrationType,
-            certificatePath,
         });
         registration.emailStatus = sent ? "Sent" : "Failed";
-    } catch (error) {
-        console.error(
-            `Welcome email workflow failed for ${email}:`,
-            error.message
-        );
+    } catch (emailError) {
+        console.error(`Email dispatch failed for ${email}:`, emailError.message);
         registration.emailStatus = "Failed";
-    } finally {
-        if (certificatePath) {
-            await cleanupCertificate(certificatePath);
-        }
     }
 
     await registration.save();
 
     return {
-        aceId: registration.aceId,
-        registration: {
-            id: registration._id,
-            name: registration.name,
-            email: registration.email,
-        },
+        id: registration._id,
+        name: registration.name,
+        email: registration.email,
+        registrationNumber: registration.registrationNumber,
+        branch: registration.branch,
+        section: registration.section,
+        isAcmMember: registration.isAcmMember,
+        qrToken: registration.qrToken,
         emailStatus: registration.emailStatus,
     };
 };

@@ -2,84 +2,94 @@ import mongoose from "mongoose";
 
 const registrationSchema = new mongoose.Schema(
     {
-        aceId: {
-            type: String,
-            required: true,
-            unique: true,
-            trim: true,
-            index:true,
-        },
-
         name: {
             type: String,
             required: true,
             trim: true,
         },
-
         email: {
             type: String,
             required: true,
             unique: true,
             lowercase: true,
             trim: true,
+            index: true,
         },
-
-        phone: {
+        registrationNumber: {
             type: String,
             required: true,
-            unique: true,
             trim: true,
+            uppercase: true,
+            index: true,
         },
-
         branch: {
             type: String,
             required: true,
+            enum: [
+                "CSE",
+                "AIML",
+                "CIC",
+                "IT",
+                "AIDS",
+                "CSBS",
+                "CSIT",
+                "CSD",
+                "ECE",
+                "EEE",
+                "Mechanical",
+                "Civil",
+            ],
             trim: true,
         },
-
-        gender: {
+        section: {
             type: String,
             required: true,
-            enum: ["Male", "Female", "Other"],
+            enum: ["A", "B", "C", "D", "E", "F"],
+            trim: true,
         },
-
-        year: {
+        whatsappNumber: {
             type: String,
             required: true,
-            enum: ["1st Year", "2nd Year", "3rd Year", "4th Year", "2nd Year L.E", "1st", "2nd", "3rd", "4th"],
+            trim: true,
         },
-
-        mode: {
+        isAcmMember: {
+            type: Boolean,
+            required: true,
+            default: false,
+        },
+        // Only required if isAcmMember === true (max 1MB)
+        acmGroupScreenshot: {
             type: String,
-            enum: ["Normal", "Lateral", "normal", "lateral"],
-            default: "Normal",
+            default: null,
         },
-
-        registrationType: {
+        // Required for all (max 10MB)
+        paymentScreenshot: {
             type: String,
             required: true,
-            enum: ["ACM India", "Local Body Chapter", "ACM india", "local body chapter"],
-            default: "ACM India",
         },
-
-        payment: {
+        // Unique Transaction Reference (UTR) ID
+        utrId: {
             type: String,
             required: true,
-            enum: ["Online", "Offline"],
+            trim: true,
         },
-
-        goodies: {
-            type: String,
+        declarationConfirmed: {
+            type: Boolean,
             required: true,
-            enum: ["Yes", "No"],
+            default: true,
         },
-
+        // Unique attendance token generated for non-ACM attendees to scan QR code
+        qrToken: {
+            type: String,
+            unique: true,
+            sparse: true,
+            trim: true,
+        },
         emailStatus: {
             type: String,
             enum: ["Pending", "Sent", "Failed"],
             default: "Pending",
         },
-
         registeredAt: {
             type: Date,
             default: Date.now,
@@ -90,9 +100,6 @@ const registrationSchema = new mongoose.Schema(
     }
 );
 
-const Registration = mongoose.model(
-    "Registration",
-    registrationSchema
-);
+const Registration = mongoose.model("Registration", registrationSchema);
 
 export default Registration;
