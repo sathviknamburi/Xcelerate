@@ -2,6 +2,7 @@ import { useState, useRef } from "react";
 import { registerParticipant } from "./services/registrationApi";
 import AsteroidsBackground from "./components/AsteroidsBackground";
 import aceLogo from "./assets/ace-logo.png";
+import { EVENT_DATA } from "./data/eventContent";
 import "./index.css";
 
 const BRANCH_OPTIONS = [
@@ -21,17 +22,12 @@ const BRANCH_OPTIONS = [
 
 const SECTION_OPTIONS = ["A", "B", "C", "D", "E", "F"];
 
-const EVENT_TRACKS = [
-    "Artificial Intelligence & AI for Engineering",
-    "Machine Learning",
-    "IoT & Cybersecurity",
-    "Quantum Computing",
-    "DSA Roadmap",
-];
-
 export default function App() {
     // Current Step in the Wizard: 1 = Student Info, 2 = ACM Membership, 3 = Payment & Pass
     const [currentStep, setCurrentStep] = useState(1);
+    const [showEventModal, setShowEventModal] = useState(false);
+    const [activeEventTab, setActiveEventTab] = useState("schedule");
+    const [activeDayIndex, setActiveDayIndex] = useState(0);
 
     // Device Lock: check if this device has already submitted a response (Google Forms style)
     const [existingSubmission, setExistingSubmission] = useState(() => {
@@ -149,7 +145,7 @@ export default function App() {
 
         if (file.size > 1 * 1024 * 1024) {
             setError(
-                `ACM WhatsApp Group screenshot is too large (${(file.size / (1024 * 1024)).toFixed(2)} MB). Max limit is 1 MB. Please compress or take a smaller screenshot.`
+                `ACM ID screenshot is too large (${(file.size / (1024 * 1024)).toFixed(2)} MB). Max limit is 1 MB. Please compress or take a smaller screenshot.`
             );
             if (acmFileInputRef.current) acmFileInputRef.current.value = "";
             return;
@@ -222,7 +218,7 @@ export default function App() {
         setError("");
 
         if (formData.isAcmMember && !formData.acmGroupScreenshot) {
-            setError("Please upload your ACM Body Member (2025-2029) WhatsApp group screenshot (Max 1MB).");
+            setError("Please upload your ACM ID screenshot (Max 1MB).");
             return;
         }
 
@@ -311,6 +307,268 @@ export default function App() {
         }
     };
 
+    const renderTrackIcon = (id) => {
+        switch (id) {
+            case "ai-eng":
+            case "ai":
+                return (
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <rect x="4" y="4" width="16" height="16" rx="2" />
+                        <rect x="9" y="9" width="6" height="6" />
+                        <line x1="9" y1="1" x2="9" y2="4" />
+                        <line x1="15" y1="1" x2="15" y2="4" />
+                        <line x1="9" y1="20" x2="9" y2="23" />
+                        <line x1="15" y1="20" x2="15" y2="23" />
+                        <line x1="20" y1="9" x2="23" y2="9" />
+                        <line x1="20" y1="14" x2="23" y2="14" />
+                        <line x1="1" y1="9" x2="4" y2="9" />
+                        <line x1="1" y1="14" x2="4" y2="14" />
+                    </svg>
+                );
+            case "aiml":
+            case "ml":
+                return (
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <circle cx="18" cy="5" r="3" />
+                        <circle cx="6" cy="12" r="3" />
+                        <circle cx="18" cy="19" r="3" />
+                        <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" />
+                        <line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
+                    </svg>
+                );
+            case "iot-cyber":
+            case "iot-security":
+                return (
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                    </svg>
+                );
+            case "quantum":
+                return (
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <circle cx="12" cy="12" r="2" />
+                        <ellipse cx="12" cy="12" rx="9" ry="4" transform="rotate(30 12 12)" />
+                        <ellipse cx="12" cy="12" rx="9" ry="4" transform="rotate(-30 12 12)" />
+                    </svg>
+                );
+            case "dsa":
+                return (
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <polyline points="16 18 22 12 16 6" />
+                        <polyline points="8 6 2 12 8 18" />
+                    </svg>
+                );
+            case "software-dev":
+                return (
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
+                        <line x1="8" y1="21" x2="16" y2="21" />
+                        <line x1="12" y1="17" x2="12" y2="21" />
+                        <polyline points="7 10 9 12 7 14" />
+                        <line x1="11" y1="12" x2="13" y2="12" />
+                    </svg>
+                );
+            default:
+                return (
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 14 14"></polyline></svg>
+                );
+        }
+    };
+
+    const renderEventGuideBody = () => (
+        <>
+            {/* Overview Meta Strip */}
+            <div className="event-overview-grid">
+                <div className="event-info-chip">
+                    <div className="event-info-chip-label">Event Format</div>
+                    <div className="event-info-chip-val">{EVENT_DATA.meta.dates}</div>
+                </div>
+                <div className="event-info-chip">
+                    <div className="event-info-chip-label">Daily Timings</div>
+                    <div className="event-info-chip-val">{EVENT_DATA.meta.timing}</div>
+                </div>
+                <div className="event-info-chip">
+                    <div className="event-info-chip-label">Campus Venue</div>
+                    <div className="event-info-chip-val">{EVENT_DATA.meta.venue}</div>
+                </div>
+            </div>
+
+            <div className="event-overview-desc">
+                {EVENT_DATA.meta.description}
+            </div>
+
+            {/* Navigation Tabs */}
+            <div className="event-tabs-bar">
+                <button
+                    type="button"
+                    className={`event-tab-btn ${activeEventTab === "schedule" ? "active" : ""}`}
+                    onClick={() => setActiveEventTab("schedule")}
+                >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+                    Schedule &amp; Domains
+                </button>
+                <button
+                    type="button"
+                    className={`event-tab-btn ${activeEventTab === "tracks" ? "active" : ""}`}
+                    onClick={() => setActiveEventTab("tracks")}
+                >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
+                    Tracks &amp; Curriculum
+                </button>
+                <button
+                    type="button"
+                    className={`event-tab-btn ${activeEventTab === "perks" ? "active" : ""}`}
+                    onClick={() => setActiveEventTab("perks")}
+                >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                    Perks
+                </button>
+                <button
+                    type="button"
+                    className={`event-tab-btn ${activeEventTab === "faqs" ? "active" : ""}`}
+                    onClick={() => setActiveEventTab("faqs")}
+                >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"></circle><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+                    FAQs
+                </button>
+            </div>
+
+            {/* TAB 1: SCHEDULE */}
+            {activeEventTab === "schedule" && (
+                <div>
+                    <div className="day-switcher">
+                        {EVENT_DATA.schedule.map((dayPlan, idx) => (
+                            <button
+                                key={dayPlan.day}
+                                type="button"
+                                className={`day-btn ${activeDayIndex === idx ? "active" : ""}`}
+                                onClick={() => setActiveDayIndex(idx)}
+                            >
+                                {dayPlan.day}: {dayPlan.title}
+                            </button>
+                        ))}
+                    </div>
+
+                    {/* Day 2 Selectable Domain Workshop Highlight */}
+                    {activeDayIndex === 1 && (
+                        <div className="day2-domains-banner">
+                            <div className="day2-banner-header">
+                                <div className="day2-banner-title">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                                    Day 2 Hands-on: Select 1 Domain
+                                </div>
+                                <span className="day2-banner-pill">Full-Day Lab</span>
+                            </div>
+                            <p className="day2-banner-desc">
+                                On Day 2, students select 1 of the domains below for an intensive, dedicated full-day hands-on workshop:
+                            </p>
+                            <div className="day2-domains-grid">
+                                {EVENT_DATA.day2Domains.map((dom) => (
+                                    <div key={dom.id} className="day2-domain-card">
+                                        <div className="day2-card-head">
+                                            <div className="day2-card-title-group">
+                                                <span className="day2-card-icon">
+                                                    {renderTrackIcon(dom.id)}
+                                                </span>
+                                                <span className="day2-card-name">{dom.title}</span>
+                                            </div>
+                                            <span className="day2-card-tag">{dom.tag}</span>
+                                        </div>
+                                        <p className="day2-card-desc">{dom.desc}</p>
+                                    </div>
+                                ))}
+                            </div>
+                            <div className="schedule-divider-badge">
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 14 14"></polyline></svg>
+                                Day 2 Schedule Timeline
+                            </div>
+                        </div>
+                    )}
+
+                    <div className="schedule-timeline">
+                        {EVENT_DATA.schedule[activeDayIndex].sessions.map((session, sIdx) => (
+                            <div key={sIdx} className="timeline-card">
+                                <span className="timeline-time-badge">{session.time}</span>
+                                <div className="timeline-body">
+                                    <h4>{session.title}</h4>
+                                    <p>{session.description}</p>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+
+            {/* TAB 2: TRACKS */}
+            {activeEventTab === "tracks" && (
+                <div className="tracks-details-grid">
+                    <div className="schedule-divider-badge" style={{ margin: "0 0 4px" }}>
+                        Day 1 &bull; Theory Curriculum (Morning &amp; Afternoon)
+                    </div>
+                    {EVENT_DATA.tracks.map((track) => (
+                        <div key={track.id} className="track-detail-card">
+                            <div className="track-detail-head">
+                                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                                    <span className="day2-card-icon">
+                                        {renderTrackIcon(track.id)}
+                                    </span>
+                                    <span className="track-detail-title">{track.name}</span>
+                                </div>
+                                <span className="track-tag-pill">{track.tag}</span>
+                            </div>
+                            <p className="track-detail-desc">{track.summary}</p>
+                        </div>
+                    ))}
+
+                    <div className="schedule-divider-badge" style={{ margin: "16px 0 4px" }}>
+                        Day 2 &bull; Selectable Practical Domains (Pick 1 for All-Day Lab)
+                    </div>
+                    {EVENT_DATA.day2Domains.map((dom) => (
+                        <div key={dom.id} className="track-detail-card">
+                            <div className="track-detail-head">
+                                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                                    <span className="day2-card-icon">
+                                        {renderTrackIcon(dom.id)}
+                                    </span>
+                                    <span className="track-detail-title">{dom.title}</span>
+                                </div>
+                                <span className="day2-banner-pill">{dom.tag}</span>
+                            </div>
+                            <p className="track-detail-desc">{dom.desc}</p>
+                        </div>
+                    ))}
+                </div>
+            )}
+
+            {/* TAB 3: PERKS */}
+            {activeEventTab === "perks" && (
+                <div className="perks-grid">
+                    {EVENT_DATA.perks.map((perk, pIdx) => (
+                        <div key={pIdx} className="perk-card">
+                            <div className="perk-card-title">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                                {perk.title}
+                            </div>
+                            <p>{perk.description}</p>
+                        </div>
+                    ))}
+                </div>
+            )}
+
+            {/* TAB 4: FAQS */}
+            {activeEventTab === "faqs" && (
+                <div className="faqs-list">
+                    {EVENT_DATA.faqs.map((faq, fIdx) => (
+                        <div key={fIdx} className="faq-card">
+                            <h4>{faq.q}</h4>
+                            <p>{faq.a}</p>
+                        </div>
+                    ))}
+                </div>
+            )}
+        </>
+    );
+
     return (
         <div className="app">
             <AsteroidsBackground />
@@ -322,7 +580,7 @@ export default function App() {
                         <img src={aceLogo} alt="ACM Logo" className="header-logo" />
                         <div className="brand-text">
                             <strong>SRKR ACM CHAPTER</strong>
-                            <span>DEPT. OF COMPUTER SCIENCE &amp; ENGINEERING</span>
+                            <span>STUDENT CHAPTER &bull; SRKR ENGINEERING COLLEGE</span>
                         </div>
                     </div>
 
@@ -355,17 +613,17 @@ export default function App() {
                     </div>
 
                     <p className="hero-lead-text">
-                        Welcome to the official registration portal for <strong>Xcelerate-2K26</strong> — a premier two-day technical symposium designed to explore emerging technologies, hands-on engineering skills, and career directions.
+                        A 2-day technical symposium by SRKR ACM. Day 1 covers core theory, followed by a dedicated full-day hands-on workshop in your chosen domain on Day 2.
                     </p>
 
                     <div className="hero-meta-strip">
                         <div className="hero-meta-item">
                             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
-                            2-Day Technical Event
+                            2-Day Event
                         </div>
                         <div className="hero-meta-item">
-                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 10v6M2 10l10-5 10 5-10 5z"></path><path d="M6 12v5c3 3 9 3 12 0v-5"></path></svg>
-                            Dept. of Computer Science &amp; Engineering
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
+                            SRKR ACM Chapter
                         </div>
                         <div className="hero-meta-item">
                             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"></path></svg>
@@ -374,29 +632,40 @@ export default function App() {
                     </div>
 
                     <div className="hero-tracks-section">
-                        <div className="hero-tracks-label">What You’ll Explore 🔍</div>
+                        <div className="hero-tracks-label">Core Tracks &amp; Domains</div>
                         <div className="hero-tracks-grid">
-                            <div className="hero-track-card">
-                                <span className="track-icon-box">🤖</span>
-                                Artificial Intelligence &amp; AI for Engineering
-                            </div>
-                            <div className="hero-track-card">
-                                <span className="track-icon-box">🧠</span>
-                                Machine Learning
-                            </div>
-                            <div className="hero-track-card">
-                                <span className="track-icon-box">🛡️</span>
-                                IoT &amp; Cybersecurity
-                            </div>
-                            <div className="hero-track-card">
-                                <span className="track-icon-box">⚛️</span>
-                                Quantum Computing
-                            </div>
-                            <div className="hero-track-card">
-                                <span className="track-icon-box">🚀</span>
-                                DSA Roadmap
-                            </div>
+                            {EVENT_DATA.tracks.map((track) => (
+                                <button
+                                    key={track.id}
+                                    type="button"
+                                    className="hero-track-card"
+                                    onClick={() => {
+                                        setActiveEventTab("tracks");
+                                        setShowEventModal(true);
+                                    }}
+                                    title="Click to view track curriculum"
+                                >
+                                    <span className="track-icon-box">
+                                        {renderTrackIcon(track.id)}
+                                    </span>
+                                    {track.name}
+                                </button>
+                            ))}
                         </div>
+                    </div>
+
+                    <div className="hero-action-buttons">
+                        <button
+                            type="button"
+                            className="hero-details-trigger-btn"
+                            onClick={() => {
+                                setActiveEventTab("schedule");
+                                setShowEventModal(true);
+                            }}
+                        >
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+                            View Event Guide &amp; Schedule
+                        </button>
                     </div>
 
                     <div className="hero-scroll-cue">
@@ -417,11 +686,11 @@ export default function App() {
                                 </div>
 
                                 <div className="submitted-status-badge">
-                                    ✓ Registration Recorded
+                                    Registration Recorded
                                 </div>
 
                                 <h2 className="submitted-heading">
-                                    You’ve already registered for Xcelerate-2K26! 🎉
+                                    You’ve already registered for Xcelerate-2K26!
                                 </h2>
 
                                 <p className="submitted-desc">
@@ -493,7 +762,11 @@ export default function App() {
                                 onClick={() => currentStep > 1 && setCurrentStep(1)}
                             >
                                 <div className="step-bubble">
-                                    {currentStep > 1 ? "✓" : "1"}
+                                    {currentStep > 1 ? (
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.2"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                                    ) : (
+                                        "1"
+                                    )}
                                 </div>
                                 <span className="step-title">Student Info</span>
                             </button>
@@ -506,7 +779,11 @@ export default function App() {
                                 disabled={currentStep < 2}
                             >
                                 <div className="step-bubble">
-                                    {currentStep > 2 ? "✓" : "2"}
+                                    {currentStep > 2 ? (
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.2"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                                    ) : (
+                                        "2"
+                                    )}
                                 </div>
                                 <span className="step-title">Membership</span>
                             </button>
@@ -719,7 +996,7 @@ export default function App() {
                                             />
                                             <div className="acm-card-body">
                                                 <h4>Yes, ACM Body Member</h4>
-                                                <p>Batch 2025–2029 (Requires active ACM WhatsApp group screenshot verification).</p>
+                                                <p>Batch 2025–2029 (Requires your assigned ACM ID screenshot verification).</p>
                                             </div>
                                         </div>
                                     </div>
@@ -800,12 +1077,12 @@ export default function App() {
                                     </p>
                                 </div>
 
-                                {/* 2. IF ACM MEMBER: WHATSAPP GROUP SCREENSHOT (MAX 1MB) */}
+                                {/* 2. IF ACM MEMBER: ACM ID SCREENSHOT (MAX 1MB) */}
                                 {formData.isAcmMember && (
                                     <div className="file-upload-block">
                                         <label>
                                             <span>
-                                                ACM Body Member (2025–2029) WhatsApp Group Screenshot <span className="req-star">*</span>
+                                                ACM ID <span className="req-star">*</span>
                                             </span>
                                             <span className="file-size-badge">Max 1 MB</span>
                                         </label>
@@ -825,7 +1102,7 @@ export default function App() {
                                             >
                                                 <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
                                                 <div className="file-dropzone-prompt">
-                                                    <strong>Click to upload</strong> or drag &amp; drop WhatsApp group screenshot
+                                                    <strong>Click to upload</strong> or drag &amp; drop ACM ID screenshot
                                                 </div>
                                                 <span style={{ fontSize: "11px", color: "#94a3b8" }}>
                                                     PNG, JPG or WEBP (Max 1 MB)
@@ -833,7 +1110,7 @@ export default function App() {
                                             </div>
                                         ) : (
                                             <div className="file-preview-card">
-                                                <img src={previews.acmGroup.url} alt="Group Screenshot Preview" className="preview-thumb" />
+                                                <img src={previews.acmGroup.url} alt="ACM ID Screenshot Preview" className="preview-thumb" />
                                                 <div className="preview-meta">
                                                     <div className="preview-name">{previews.acmGroup.name}</div>
                                                     <div className="preview-size">{previews.acmGroup.size} &bull; Ready</div>
@@ -919,7 +1196,7 @@ export default function App() {
                                         />
                                         <span>
                                             {formData.isAcmMember
-                                                ? "I confirm that I am an active ACM Body Member (2025–2029) and the submitted details, WhatsApp group screenshot, and payment proof are genuine."
+                                                ? "I confirm that I am an active ACM Body Member (2025–2029) and the submitted details, ACM ID screenshot, and payment proof are genuine."
                                                 : "I confirm that the details provided, registration information, and payment screenshot are genuine and authentic."}
                                         </span>
                                     </label>
@@ -972,7 +1249,47 @@ export default function App() {
                         )}
                     </div>
                 </section>
+
+                {/* EVENT GUIDE & SYMPOSIUM DETAILS */}
+                <section className="event-guide-section" id="event-guide">
+                    <div className="event-guide-card">
+                        <div className="event-guide-header">
+                            <span className="event-guide-badge">Symposium Guide</span>
+                            <h2 className="event-guide-title">Event Schedule &amp; Domains</h2>
+                            <p className="event-guide-subtitle">
+                                Day 1 theory sessions &bull; Day 2 dedicated full-day domain workshop.
+                            </p>
+                        </div>
+                        {renderEventGuideBody()}
+                    </div>
+                </section>
             </main>
+
+            {/* EVENT GUIDE MODAL */}
+            {showEventModal && (
+                <div className="event-modal-backdrop" onClick={() => setShowEventModal(false)}>
+                    <div className="event-modal-card" onClick={(e) => e.stopPropagation()}>
+                        <div className="event-modal-header">
+                            <div>
+                                <span className="event-guide-badge">Event Guide</span>
+                                <h3 style={{ fontSize: "20px", fontWeight: "800", color: "#0f172a", margin: "4px 0 0" }}>
+                                    Xcelerate-2K26 Schedule &amp; Domains
+                                </h3>
+                            </div>
+                            <button
+                                type="button"
+                                className="event-modal-close-btn"
+                                onClick={() => setShowEventModal(false)}
+                                title="Close Guide"
+                                aria-label="Close Guide"
+                            >
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                            </button>
+                        </div>
+                        {renderEventGuideBody()}
+                    </div>
+                </div>
+            )}
 
             {/* SUCCESS CONFIRMATION MODAL */}
             {successData && (
@@ -985,7 +1302,7 @@ export default function App() {
                         </div>
 
                         <h2 style={{ fontSize: "22px", fontWeight: "800", color: "#0f172a", marginBottom: "8px" }}>
-                            Registration Successful! 🎉
+                            Registration Successful!
                         </h2>
 
                         <p style={{ fontSize: "14px", color: "#64748b", margin: "0 0 16px" }}>
@@ -1024,11 +1341,11 @@ export default function App() {
                         <div className="success-email-notice">
                             {successData.isAcmMember ? (
                                 <span>
-                                    📧 Confirmation email has been dispatched to <strong>{successData.email}</strong>.
+                                    Confirmation email has been dispatched to <strong>{successData.email}</strong>.
                                 </span>
                             ) : (
                                 <span>
-                                    📲 Your personalized <strong>Attendance QR Code</strong> has been generated and sent to <strong>{successData.email}</strong> for scanning on both days!
+                                    Your personalized <strong>Attendance QR Code</strong> has been generated and sent to <strong>{successData.email}</strong> for scanning on both days.
                                 </span>
                             )}
                         </div>
@@ -1048,7 +1365,7 @@ export default function App() {
             <footer className="site-footer">
                 <div className="footer-inner">
                     <p style={{ fontSize: "13px", color: "#64748b" }}>
-                        &copy; 2026 SRKR ACM Student Chapter &bull; Department of Computer Science &amp; Engineering
+                        &copy; 2026 SRKR ACM Student Chapter &bull; SRKR Engineering College (Autonomous)
                     </p>
                 </div>
             </footer>

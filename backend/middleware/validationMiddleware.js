@@ -107,9 +107,9 @@ const registrationSchema = Joi.object({
                 .required()
                 .max(MAX_1MB_BASE64_LENGTH)
                 .messages({
-                    "string.empty": "ACM WhatsApp group screenshot is required for ACM Body Members.",
-                    "string.max": "ACM WhatsApp group screenshot exceeds 1MB limit.",
-                    "any.required": "ACM WhatsApp group screenshot is required for ACM Body Members.",
+                    "string.empty": "ACM ID screenshot is required for ACM Body Members.",
+                    "string.max": "ACM ID screenshot exceeds 1MB limit.",
+                    "any.required": "ACM ID screenshot is required for ACM Body Members.",
                 }),
             otherwise: Joi.string().allow("", null).optional(),
         }),
