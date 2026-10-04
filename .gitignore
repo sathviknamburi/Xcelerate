@@ -23,6 +23,7 @@ build/
 # Local files
 *.local
 backend/generated/
+backend/scripts/
 
 # Editor directories and files
 .vscode/*

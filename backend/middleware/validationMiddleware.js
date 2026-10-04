@@ -16,10 +16,6 @@ const BRANCHES = [
 ];
 
 const SECTIONS = ["A", "B", "C", "D", "E", "F"];
-
-// Approx max base64 size helpers
-// Base64 is ~1.33x the original binary size
-const MAX_1MB_BASE64_LENGTH = Math.ceil(1 * 1024 * 1024 * 1.37);
 const MAX_10MB_BASE64_LENGTH = Math.ceil(10 * 1024 * 1024 * 1.37);
 
 const registrationSchema = Joi.object({
@@ -60,11 +56,11 @@ const registrationSchema = Joi.object({
         .trim()
         .uppercase()
         .min(3)
-        .max(20)
+        .max(25)
         .required()
         .messages({
-            "string.empty": "Registration number is required.",
-            "any.required": "Registration number is required.",
+            "string.empty": "College Registration number is required.",
+            "any.required": "College Registration number is required.",
         }),
 
     branch: Joi.string()
@@ -96,42 +92,50 @@ const registrationSchema = Joi.object({
     isAcmMember: Joi.boolean()
         .required()
         .messages({
-            "any.required": "Please indicate if you are an ACM Body Member.",
+            "any.required": "Please indicate if you are an ACE / ACM Member.",
         }),
 
-    acmGroupScreenshot: Joi.string()
+    aceId: Joi.string()
+        .trim()
         .allow("", null)
-        .when("isAcmMember", {
-            is: true,
+        .optional(),
+
+    paymentMode: Joi.string()
+        .valid("Online", "Offline")
+        .default("Online"),
+
+    // Required only for Online payments
+    paymentScreenshot: Joi.string()
+        .allow("", null)
+        .when("paymentMode", {
+            is: "Online",
             then: Joi.string()
                 .required()
-                .max(MAX_1MB_BASE64_LENGTH)
+                .max(MAX_10MB_BASE64_LENGTH)
                 .messages({
-                    "string.empty": "ACM ID screenshot is required for ACM Body Members.",
-                    "string.max": "ACM ID screenshot exceeds 1MB limit.",
-                    "any.required": "ACM ID screenshot is required for ACM Body Members.",
+                    "string.empty": "Payment screenshot is required for online payments.",
+                    "string.max": "Payment screenshot exceeds 10MB limit.",
+                    "any.required": "Payment screenshot is required for online payments.",
                 }),
             otherwise: Joi.string().allow("", null).optional(),
         }),
 
-    paymentScreenshot: Joi.string()
-        .required()
-        .max(MAX_10MB_BASE64_LENGTH)
-        .messages({
-            "string.empty": "Payment screenshot is required.",
-            "string.max": "Payment screenshot exceeds 10MB limit.",
-            "any.required": "Payment screenshot is required.",
-        }),
-
+    // Required only for Online payments
     utrId: Joi.string()
         .trim()
         .uppercase()
-        .min(4)
-        .max(50)
-        .required()
-        .messages({
-            "string.empty": "UTR / Transaction Reference ID is required.",
-            "any.required": "UTR / Transaction Reference ID is required.",
+        .allow("", null)
+        .when("paymentMode", {
+            is: "Online",
+            then: Joi.string()
+                .min(4)
+                .max(50)
+                .required()
+                .messages({
+                    "string.empty": "UTR / Transaction Reference ID is required.",
+                    "any.required": "UTR / Transaction Reference ID is required.",
+                }),
+            otherwise: Joi.string().allow("", null).optional(),
         }),
 
     declarationConfirmed: Joi.boolean()
@@ -141,6 +145,8 @@ const registrationSchema = Joi.object({
             "any.only": "You must confirm the declaration to proceed.",
             "any.required": "You must confirm the declaration to proceed.",
         }),
+
+    adminPasscode: Joi.string().allow("", null).optional(),
 });
 
 export const validateRegistration = (req, res, next) => {
@@ -169,6 +175,16 @@ export const validateRegistration = (req, res, next) => {
     // Coerce declarationConfirmed if passed as string
     if (typeof req.body.declarationConfirmed === "string") {
         req.body.declarationConfirmed = req.body.declarationConfirmed === "true";
+    }
+
+    // Validate admin passcode if offline registration is attempted
+    if (req.body.paymentMode === "Offline") {
+        if (req.body.adminPasscode !== "admin123") {
+            return res.status(403).json({
+                success: false,
+                message: "Unauthorized: Invalid offline desk admin passcode.",
+            });
+        }
     }
 
     const { error, value } = registrationSchema.validate(req.body, {

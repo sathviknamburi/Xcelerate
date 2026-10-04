@@ -1,5 +1,6 @@
-import { useState, useRef } from "react";
-import { registerParticipant } from "./services/registrationApi";
+import { useState, useRef, useEffect } from "react";
+import QRCode from "qrcode";
+import { registerParticipant, checkMemberPhone } from "./services/registrationApi";
 import AsteroidsBackground from "./components/AsteroidsBackground";
 import aceLogo from "./assets/ace-logo.png";
 import { EVENT_DATA } from "./data/eventContent";
@@ -23,13 +24,42 @@ const BRANCH_OPTIONS = [
 const SECTION_OPTIONS = ["A", "B", "C", "D", "E", "F"];
 
 export default function App() {
-    // Current Step in the Wizard: 1 = Student Info, 2 = ACM Membership, 3 = Payment & Pass
+    // Exact 3 Phases:
+    // Phase 1 = Membership Check ("Are you an ACE Member?" -> If yes, shows WhatsApp number field right there)
+    // Phase 2 = Student Details (Autofilled profile + ONLY remaining details: Roll No & Section for ACE; manual for Non-Members)
+    // Phase 3 = Payment & Verification (UPI QR + Screenshot + 12-digit UTR ID + unique validation)
     const [currentStep, setCurrentStep] = useState(1);
+    const [membershipChoice, setMembershipChoice] = useState(null); // null | 'yes' | 'no'
+
     const [showEventModal, setShowEventModal] = useState(false);
     const [activeEventTab, setActiveEventTab] = useState("schedule");
     const [activeDayIndex, setActiveDayIndex] = useState(0);
 
-    // Device Lock: check if this device has already submitted a response (Google Forms style)
+    // Secret Offline Desk State
+    const [isOfflineDesk, setIsOfflineDesk] = useState(false);
+    const [showOfflinePasscodeModal, setShowOfflinePasscodeModal] = useState(false);
+    const [offlinePasscodeInput, setOfflinePasscodeInput] = useState("");
+    const [offlinePasscodeError, setOfflinePasscodeError] = useState("");
+    const logoClickCountRef = useRef(0);
+    const logoClickTimerRef = useRef(null);
+
+    // UPI copy feedback state
+    const [copiedUpi, setCopiedUpi] = useState(false);
+
+    // Dynamic QR Code data URLs
+    const [upiQrDataUrl, setUpiQrDataUrl] = useState("");
+    const [passQrDataUrl, setPassQrDataUrl] = useState("");
+
+    // Scanned attendee pass verification state (/verify/:token)
+    const [scannedPassToken, setScannedPassToken] = useState(null);
+    const [scannedAttendee, setScannedAttendee] = useState(null);
+    const [scannedLoading, setScannedLoading] = useState(false);
+    const [scannedError, setScannedError] = useState("");
+
+    // Form element ref for smooth mobile auto-scroll
+    const formCardRef = useRef(null);
+
+    // Device submission cache
     const [existingSubmission, setExistingSubmission] = useState(() => {
         try {
             const saved = localStorage.getItem("xcelerate_registered_pass");
@@ -39,6 +69,7 @@ export default function App() {
         }
     });
 
+    // Form data state
     const [formData, setFormData] = useState({
         name: "",
         email: "",
@@ -47,23 +78,170 @@ export default function App() {
         section: "",
         whatsappNumber: "",
         isAcmMember: false,
-        acmGroupScreenshot: "",
+        aceId: "",
         paymentScreenshot: "",
         utrId: "",
         declarationConfirmed: false,
     });
 
+    // Member live verification state
+    const [memberLoading, setMemberLoading] = useState(false);
+    const [verifiedMember, setVerifiedMember] = useState(null);
+
     const [previews, setPreviews] = useState({
-        acmGroup: null, // { url, name, size }
-        payment: null,  // { url, name, size }
+        payment: null, // { url, name, size }
     });
 
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
     const [successData, setSuccessData] = useState(null);
 
-    const acmFileInputRef = useRef(null);
     const paymentFileInputRef = useRef(null);
+
+    const scrollToForm = () => {
+        setTimeout(() => {
+            if (formCardRef.current) {
+                formCardRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
+            }
+        }, 60);
+    };
+
+    // Generate UPI QR Code on mount
+    useEffect(() => {
+        QRCode.toDataURL("upi://pay?pa=srkr.acm@upi&pn=SRKR%20ACM%20Student%20Chapter&cu=INR", {
+            width: 240,
+            margin: 1.5,
+            color: {
+                dark: "#0f172a",
+                light: "#ffffff",
+            },
+        })
+            .then(setUpiQrDataUrl)
+            .catch((err) => console.error("UPI QR Error:", err));
+    }, []);
+
+    // Generate Attendance Pass QR Code when token is present
+    useEffect(() => {
+        const token = existingSubmission?.qrToken || successData?.qrToken;
+        if (token) {
+            // Encode clickable verification URL from VITE_PASS_URL .env (or origin / Wi-Fi fallback)
+            const envPassUrl = (import.meta.env.VITE_PASS_URL || "").trim().replace(/\/+$/, "");
+            let appBase = envPassUrl || window.location.origin;
+            if (!envPassUrl && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")) {
+                appBase = "http://192.168.0.4:5173";
+            }
+            const passUrl = `${appBase}/verify/${token}`;
+            QRCode.toDataURL(passUrl, {
+                width: 220,
+                margin: 1.5,
+                color: {
+                    dark: "#0f172a",
+                    light: "#ffffff",
+                },
+            })
+                .then(setPassQrDataUrl)
+                .catch((err) => console.error("Pass QR Error:", err));
+        }
+    }, [existingSubmission, successData]);
+
+    // Listen to /offline, /verify/:token, or #verify/:token on URL
+    useEffect(() => {
+        const checkUrl = async () => {
+            const path = window.location.pathname;
+            const hash = window.location.hash;
+
+            if (path.toLowerCase().includes("offline") || hash.toLowerCase().includes("offline")) {
+                setShowOfflinePasscodeModal(true);
+            }
+
+            // Extract verify token if present (/verify/<token> or #verify/<token>)
+            let token = null;
+            if (path.includes("/verify/")) {
+                token = path.split("/verify/")[1]?.split("/")[0]?.split("?")[0];
+            } else if (hash.includes("verify/")) {
+                token = hash.split("verify/")[1]?.split("/")[0]?.split("?")[0];
+            }
+
+            if (token && token.trim()) {
+                const cleanToken = token.trim();
+                setScannedPassToken(cleanToken);
+                setScannedLoading(true);
+                setScannedError("");
+
+                try {
+                    const apiBase = (import.meta.env.VITE_API_URL || "").trim().replace(/\/+$/, "");
+                    const baseUrl = apiBase || `${window.location.protocol}//${window.location.hostname}:5000/api`;
+                    const res = await fetch(`${baseUrl}/verify/${cleanToken}?json=true`, {
+                        headers: { Accept: "application/json" },
+                    });
+                    const data = await res.json();
+                    if (data.valid && data.participant) {
+                        setScannedAttendee(data.participant);
+                    } else {
+                        setScannedError(data.message || "No attendee record matches this pass code.");
+                    }
+                } catch {
+                    try {
+                        const res2 = await fetch(`/verify/${cleanToken}?json=true`, {
+                            headers: { Accept: "application/json" },
+                        });
+                        const data2 = await res2.json();
+                        if (data2.valid && data2.participant) {
+                            setScannedAttendee(data2.participant);
+                        } else {
+                            setScannedError(data2.message || "No attendee record matches this pass code.");
+                        }
+                    } catch {
+                        setScannedError("Could not reach verification server. Please check your connection.");
+                    }
+                } finally {
+                    setScannedLoading(false);
+                }
+            }
+        };
+
+        checkUrl();
+        window.addEventListener("hashchange", checkUrl);
+        return () => window.removeEventListener("hashchange", checkUrl);
+    }, []);
+
+    // Triple-click on ACE Logo triggers admin offline desk modal
+    const handleLogoClick = () => {
+        logoClickCountRef.current += 1;
+        if (logoClickTimerRef.current) clearTimeout(logoClickTimerRef.current);
+        logoClickTimerRef.current = setTimeout(() => {
+            logoClickCountRef.current = 0;
+        }, 800);
+
+        if (logoClickCountRef.current >= 3) {
+            logoClickCountRef.current = 0;
+            setShowOfflinePasscodeModal(true);
+        }
+    };
+
+    const handleUnlockOfflineDesk = (e) => {
+        e.preventDefault();
+        if (offlinePasscodeInput === "admin123") {
+            setIsOfflineDesk(true);
+            setShowOfflinePasscodeModal(false);
+            setOfflinePasscodeInput("");
+            setOfflinePasscodeError("");
+            setError("");
+        } else {
+            setOfflinePasscodeError("Invalid passcode. Please enter the correct admin passcode.");
+        }
+    };
+
+    const handleExitOfflineDesk = () => {
+        setIsOfflineDesk(false);
+        setError("");
+    };
+
+    const copyUpiId = () => {
+        navigator.clipboard?.writeText("srkr.acm@upi").catch(() => {});
+        setCopiedUpi(true);
+        setTimeout(() => setCopiedUpi(false), 2500);
+    };
 
     const handleChange = (e) => {
         const { name, value, type, checked } = e.target;
@@ -75,97 +253,163 @@ export default function App() {
         if (error) setError("");
     };
 
-    const handleAcmToggle = (isMember) => {
-        setFormData((prev) => ({
-            ...prev,
-            isAcmMember: isMember,
-            acmGroupScreenshot: isMember ? prev.acmGroupScreenshot : "",
-        }));
-        if (!isMember) {
-            setPreviews((prev) => ({ ...prev, acmGroup: null }));
-            if (acmFileInputRef.current) acmFileInputRef.current.value = "";
-        }
-        if (error) setError("");
-    };
-
-    // Step 1 Validation -> Move to Step 2
-    const handleNextFromStep1 = () => {
+    // Toggle Membership Choice in Phase 1
+    const handleMembershipChoiceChange = (choice) => {
+        setMembershipChoice(choice);
         setError("");
-
-        if (!formData.name.trim()) {
-            setError("Please enter your full name.");
-            return;
-        }
-
-        const rawEmail = formData.email.trim();
-        if (!rawEmail) {
-            setError("Please enter your Gmail username or address.");
-            return;
-        }
-        const emailUsername = rawEmail.toLowerCase().replace(/@.*$/, "").trim();
-        if (!emailUsername) {
-            setError("Please provide a valid Gmail username.");
-            return;
-        }
-
-        if (!formData.registrationNumber.trim()) {
-            setError("Please enter your College Registration Number.");
-            return;
-        }
-
-        const cleanPhone = formData.whatsappNumber.trim();
-        if (!/^[0-9]{10}$/.test(cleanPhone)) {
-            setError("WhatsApp Number must be exactly 10 digits.");
-            return;
-        }
-
-        if (!formData.branch) {
-            setError("Please select your branch.");
-            return;
-        }
-
-        if (!formData.section) {
-            setError("Please select your section.");
-            return;
-        }
-
-        setCurrentStep(2);
-    };
-
-    // Step 2 -> Move to Step 3
-    const handleNextFromStep2 = () => {
-        setError("");
-        setCurrentStep(3);
-    };
-
-    // File selection for ACM WhatsApp Group Screenshot (Max 1MB)
-    const handleAcmScreenshotChange = (e) => {
-        const file = e.target.files?.[0];
-        if (!file) return;
-
-        if (file.size > 1 * 1024 * 1024) {
-            setError(
-                `ACM ID screenshot is too large (${(file.size / (1024 * 1024)).toFixed(2)} MB). Max limit is 1 MB. Please compress or take a smaller screenshot.`
-            );
-            if (acmFileInputRef.current) acmFileInputRef.current.value = "";
-            return;
-        }
-
-        const reader = new FileReader();
-        reader.onload = () => {
-            const base64 = reader.result;
-            setFormData((prev) => ({ ...prev, acmGroupScreenshot: base64 }));
-            setPreviews((prev) => ({
+        if (choice === "yes") {
+            setFormData((prev) => ({
                 ...prev,
-                acmGroup: {
-                    url: base64,
-                    name: file.name,
-                    size: `${(file.size / 1024).toFixed(1)} KB`,
-                },
+                isAcmMember: true,
             }));
-            setError("");
-        };
-        reader.readAsDataURL(file);
+        } else {
+            setFormData((prev) => ({
+                ...prev,
+                isAcmMember: false,
+                name: "",
+                email: "",
+                branch: "",
+                aceId: "",
+                whatsappNumber: "",
+            }));
+            setVerifiedMember(null);
+        }
+    };
+
+    // Reset flow to register another attendee
+    const handleRegisterAnother = () => {
+        try {
+            localStorage.removeItem("xcelerate_registered_pass");
+        } catch (e) {
+            console.warn(e);
+        }
+        setExistingSubmission(null);
+        setSuccessData(null);
+        setPassQrDataUrl("");
+        setMembershipChoice(null);
+        setVerifiedMember(null);
+        setFormData({
+            name: "",
+            email: "",
+            registrationNumber: "",
+            branch: "",
+            section: "",
+            whatsappNumber: "",
+            isAcmMember: false,
+            aceId: "",
+            paymentScreenshot: "",
+            utrId: "",
+            declarationConfirmed: false,
+        });
+        setPreviews({ payment: null });
+        setCurrentStep(1);
+        setError("");
+        scrollToForm();
+    };
+
+    // ========================================================
+    // PHASE 1 -> PHASE 2
+    // ========================================================
+    const handleNextFromPhase1 = async () => {
+        setError("");
+
+        if (!membershipChoice) {
+            setError("Please select whether you are an ACE Member or a Regular Participant.");
+            return;
+        }
+
+        if (membershipChoice === "yes") {
+            const cleanPhone = formData.whatsappNumber.replace(/\D/g, "").slice(-10);
+            if (cleanPhone.length !== 10) {
+                setError("Please enter your registered 10-digit WhatsApp phone number.");
+                return;
+            }
+
+            setMemberLoading(true);
+            try {
+                const res = await checkMemberPhone(cleanPhone);
+                if (res.isMember && res.member) {
+                    const mem = res.member;
+                    setVerifiedMember(mem);
+                    const emailUser = (mem.email || "").replace(/@.*$/, "").trim().toLowerCase();
+
+                    // Autofill verified member fields
+                    setFormData((prev) => ({
+                        ...prev,
+                        name: mem.name || "",
+                        email: emailUser || "",
+                        branch: mem.branch || "",
+                        aceId: mem.aceId || "",
+                        whatsappNumber: cleanPhone,
+                    }));
+                    setCurrentStep(2);
+                    scrollToForm();
+                } else {
+                    setError("This phone number is not found in the ACE 2025 Member Directory. Please verify your number or select 'No, Regular Participant'.");
+                }
+            } catch (err) {
+                console.error("Member check error:", err);
+                setError("Could not connect to member verification service. Please check your network and try again.");
+            } finally {
+                setMemberLoading(false);
+            }
+        } else {
+            // Regular Participant proceeds straight to fill details in Phase 2
+            setCurrentStep(2);
+            scrollToForm();
+        }
+    };
+
+    // ========================================================
+    // PHASE 2 -> PHASE 3 (Payment)
+    // ========================================================
+    const handleNextFromPhase2 = () => {
+        setError("");
+
+        if (formData.isAcmMember) {
+            if (!formData.name.trim()) {
+                setError("Full Name is missing. Please go back and verify your WhatsApp number.");
+                return;
+            }
+            if (!formData.registrationNumber.trim()) {
+                setError("Please enter your College Registration Number (Roll No).");
+                return;
+            }
+            if (!formData.section) {
+                setError("Please select your section.");
+                return;
+            }
+        } else {
+            if (!formData.name.trim()) {
+                setError("Please enter your full name.");
+                return;
+            }
+            const rawEmail = formData.email.trim();
+            if (!rawEmail) {
+                setError("Please enter your Gmail username.");
+                return;
+            }
+            if (!formData.registrationNumber.trim()) {
+                setError("Please enter your College Registration Number.");
+                return;
+            }
+            const cleanPhone = formData.whatsappNumber.replace(/\D/g, "");
+            if (cleanPhone.length !== 10) {
+                setError("WhatsApp Number must be exactly 10 digits.");
+                return;
+            }
+            if (!formData.branch) {
+                setError("Please select your branch.");
+                return;
+            }
+            if (!formData.section) {
+                setError("Please select your section.");
+                return;
+            }
+        }
+
+        setCurrentStep(3);
+        scrollToForm();
     };
 
     // File selection for Payment Screenshot (Max 10MB)
@@ -198,13 +442,6 @@ export default function App() {
         reader.readAsDataURL(file);
     };
 
-    const removeAcmScreenshot = (e) => {
-        e.stopPropagation();
-        setFormData((prev) => ({ ...prev, acmGroupScreenshot: "" }));
-        setPreviews((prev) => ({ ...prev, acmGroup: null }));
-        if (acmFileInputRef.current) acmFileInputRef.current.value = "";
-    };
-
     const removePaymentScreenshot = (e) => {
         e.stopPropagation();
         setFormData((prev) => ({ ...prev, paymentScreenshot: "" }));
@@ -212,28 +449,26 @@ export default function App() {
         if (paymentFileInputRef.current) paymentFileInputRef.current.value = "";
     };
 
-    // Final Submission (Step 3)
+    // ========================================================
+    // PHASE 3 SUBMISSION (Online UPI or Offline Desk)
+    // ========================================================
     const handleSubmit = async (e) => {
         e.preventDefault();
         setError("");
 
-        if (formData.isAcmMember && !formData.acmGroupScreenshot) {
-            setError("Please upload your ACM ID screenshot (Max 1MB).");
-            return;
-        }
-
-        if (!formData.paymentScreenshot) {
-            setError("Please upload your payment screenshot (Max 10MB).");
-            return;
-        }
-
-        if (!formData.utrId.trim()) {
-            setError("Please enter your Unique Transaction Reference (UTR) ID.");
-            return;
+        if (!isOfflineDesk) {
+            if (!formData.paymentScreenshot) {
+                setError("Please upload your PhonePe / UPI payment screenshot.");
+                return;
+            }
+            if (!formData.utrId.trim()) {
+                setError("Please enter your 12-digit Unique Transaction Reference (UTR) ID.");
+                return;
+            }
         }
 
         if (!formData.declarationConfirmed) {
-            setError("Please check the confirmation declaration to complete your registration.");
+            setError("Please accept the confirmation declaration to complete your registration.");
             return;
         }
 
@@ -244,11 +479,19 @@ export default function App() {
             const fullEmail = `${emailUsername}@gmail.com`;
 
             const payload = {
-                ...formData,
+                name: formData.name,
                 email: fullEmail,
                 registrationNumber: formData.registrationNumber.trim().toUpperCase(),
-                whatsappNumber: formData.whatsappNumber.trim(),
-                utrId: formData.utrId.trim().toUpperCase(),
+                whatsappNumber: formData.whatsappNumber.replace(/\D/g, "").slice(-10),
+                branch: formData.branch,
+                section: formData.section,
+                isAcmMember: formData.isAcmMember,
+                aceId: formData.aceId || null,
+                paymentMode: isOfflineDesk ? "Offline" : "Online",
+                paymentScreenshot: isOfflineDesk ? null : formData.paymentScreenshot,
+                utrId: isOfflineDesk ? null : formData.utrId.trim().toUpperCase(),
+                declarationConfirmed: formData.declarationConfirmed,
+                adminPasscode: isOfflineDesk ? "admin123" : undefined,
             };
 
             const response = await registerParticipant(payload);
@@ -259,6 +502,8 @@ export default function App() {
                 branch: formData.branch,
                 section: formData.section,
                 isAcmMember: formData.isAcmMember,
+                aceId: formData.aceId || null,
+                paymentMode: payload.paymentMode,
                 email: fullEmail,
                 message: response.message,
                 qrToken: response.registration?.qrToken,
@@ -287,15 +532,15 @@ export default function App() {
                 section: "",
                 whatsappNumber: "",
                 isAcmMember: false,
-                acmGroupScreenshot: "",
+                aceId: "",
                 paymentScreenshot: "",
                 utrId: "",
                 declarationConfirmed: false,
             });
-            setPreviews({ acmGroup: null, payment: null });
+            setPreviews({ payment: null });
             setCurrentStep(1);
-            if (acmFileInputRef.current) acmFileInputRef.current.value = "";
             if (paymentFileInputRef.current) paymentFileInputRef.current.value = "";
+            scrollToForm();
         } catch (err) {
             const msg =
                 err.response?.data?.errors?.[0] ||
@@ -307,77 +552,8 @@ export default function App() {
         }
     };
 
-    const renderTrackIcon = (id) => {
-        switch (id) {
-            case "ai-eng":
-            case "ai":
-                return (
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <rect x="4" y="4" width="16" height="16" rx="2" />
-                        <rect x="9" y="9" width="6" height="6" />
-                        <line x1="9" y1="1" x2="9" y2="4" />
-                        <line x1="15" y1="1" x2="15" y2="4" />
-                        <line x1="9" y1="20" x2="9" y2="23" />
-                        <line x1="15" y1="20" x2="15" y2="23" />
-                        <line x1="20" y1="9" x2="23" y2="9" />
-                        <line x1="20" y1="14" x2="23" y2="14" />
-                        <line x1="1" y1="9" x2="4" y2="9" />
-                        <line x1="1" y1="14" x2="4" y2="14" />
-                    </svg>
-                );
-            case "aiml":
-            case "ml":
-                return (
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <circle cx="18" cy="5" r="3" />
-                        <circle cx="6" cy="12" r="3" />
-                        <circle cx="18" cy="19" r="3" />
-                        <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" />
-                        <line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
-                    </svg>
-                );
-            case "iot-cyber":
-            case "iot-security":
-                return (
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-                    </svg>
-                );
-            case "quantum":
-                return (
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <circle cx="12" cy="12" r="2" />
-                        <ellipse cx="12" cy="12" rx="9" ry="4" transform="rotate(30 12 12)" />
-                        <ellipse cx="12" cy="12" rx="9" ry="4" transform="rotate(-30 12 12)" />
-                    </svg>
-                );
-            case "dsa":
-                return (
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <polyline points="16 18 22 12 16 6" />
-                        <polyline points="8 6 2 12 8 18" />
-                    </svg>
-                );
-            case "software-dev":
-                return (
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
-                        <line x1="8" y1="21" x2="16" y2="21" />
-                        <line x1="12" y1="17" x2="12" y2="21" />
-                        <polyline points="7 10 9 12 7 14" />
-                        <line x1="11" y1="12" x2="13" y2="12" />
-                    </svg>
-                );
-            default:
-                return (
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 14 14"></polyline></svg>
-                );
-        }
-    };
-
     const renderEventGuideBody = () => (
         <>
-            {/* Overview Meta Strip */}
             <div className="event-overview-grid">
                 <div className="event-info-chip">
                     <div className="event-info-chip-label">Event Format</div>
@@ -397,14 +573,12 @@ export default function App() {
                 {EVENT_DATA.meta.description}
             </div>
 
-            {/* Navigation Tabs */}
             <div className="event-tabs-bar">
                 <button
                     type="button"
                     className={`event-tab-btn ${activeEventTab === "schedule" ? "active" : ""}`}
                     onClick={() => setActiveEventTab("schedule")}
                 >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
                     Schedule &amp; Domains
                 </button>
                 <button
@@ -412,7 +586,6 @@ export default function App() {
                     className={`event-tab-btn ${activeEventTab === "tracks" ? "active" : ""}`}
                     onClick={() => setActiveEventTab("tracks")}
                 >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
                     Tracks &amp; Curriculum
                 </button>
                 <button
@@ -420,7 +593,6 @@ export default function App() {
                     className={`event-tab-btn ${activeEventTab === "perks" ? "active" : ""}`}
                     onClick={() => setActiveEventTab("perks")}
                 >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="20 6 9 17 4 12"></polyline></svg>
                     Perks
                 </button>
                 <button
@@ -428,18 +600,16 @@ export default function App() {
                     className={`event-tab-btn ${activeEventTab === "faqs" ? "active" : ""}`}
                     onClick={() => setActiveEventTab("faqs")}
                 >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"></circle><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
                     FAQs
                 </button>
             </div>
 
-            {/* TAB 1: SCHEDULE */}
             {activeEventTab === "schedule" && (
                 <div>
                     <div className="day-switcher">
-                        {EVENT_DATA.schedule.map((dayPlan, idx) => (
+                        {(EVENT_DATA.schedule || []).map((dayPlan, idx) => (
                             <button
-                                key={dayPlan.day}
+                                key={dayPlan.day || idx}
                                 type="button"
                                 className={`day-btn ${activeDayIndex === idx ? "active" : ""}`}
                                 onClick={() => setActiveDayIndex(idx)}
@@ -449,49 +619,13 @@ export default function App() {
                         ))}
                     </div>
 
-                    {/* Day 2 Selectable Domain Workshop Highlight */}
-                    {activeDayIndex === 1 && (
-                        <div className="day2-domains-banner">
-                            <div className="day2-banner-header">
-                                <div className="day2-banner-title">
-                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
-                                    Day 2 Hands-on: Select 1 Domain
-                                </div>
-                                <span className="day2-banner-pill">Full-Day Lab</span>
-                            </div>
-                            <p className="day2-banner-desc">
-                                On Day 2, students select 1 of the domains below for an intensive, dedicated full-day hands-on workshop:
-                            </p>
-                            <div className="day2-domains-grid">
-                                {EVENT_DATA.day2Domains.map((dom) => (
-                                    <div key={dom.id} className="day2-domain-card">
-                                        <div className="day2-card-head">
-                                            <div className="day2-card-title-group">
-                                                <span className="day2-card-icon">
-                                                    {renderTrackIcon(dom.id)}
-                                                </span>
-                                                <span className="day2-card-name">{dom.title}</span>
-                                            </div>
-                                            <span className="day2-card-tag">{dom.tag}</span>
-                                        </div>
-                                        <p className="day2-card-desc">{dom.desc}</p>
-                                    </div>
-                                ))}
-                            </div>
-                            <div className="schedule-divider-badge">
-                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 14 14"></polyline></svg>
-                                Day 2 Schedule Timeline
-                            </div>
-                        </div>
-                    )}
-
                     <div className="schedule-timeline">
-                        {EVENT_DATA.schedule[activeDayIndex].sessions.map((session, sIdx) => (
-                            <div key={sIdx} className="timeline-card">
-                                <span className="timeline-time-badge">{session.time}</span>
-                                <div className="timeline-body">
-                                    <h4>{session.title}</h4>
-                                    <p>{session.description}</p>
+                        {(EVENT_DATA.schedule?.[activeDayIndex]?.sessions || []).map((slot, sIdx) => (
+                            <div key={sIdx} className="timeline-slot">
+                                <div className="slot-time">{slot.time}</div>
+                                <div className="slot-content">
+                                    <div className="slot-title">{slot.title}</div>
+                                    <div className="slot-desc">{slot.description}</div>
                                 </div>
                             </div>
                         ))}
@@ -499,66 +633,50 @@ export default function App() {
                 </div>
             )}
 
-            {/* TAB 2: TRACKS */}
             {activeEventTab === "tracks" && (
-                <div className="tracks-details-grid">
-                    <div className="schedule-divider-badge" style={{ margin: "0 0 4px" }}>
-                        Day 1 &bull; Theory Curriculum (Morning &amp; Afternoon)
-                    </div>
-                    {EVENT_DATA.tracks.map((track) => (
-                        <div key={track.id} className="track-detail-card">
-                            <div className="track-detail-head">
-                                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                                    <span className="day2-card-icon">
-                                        {renderTrackIcon(track.id)}
-                                    </span>
-                                    <span className="track-detail-title">{track.name}</span>
-                                </div>
-                                <span className="track-tag-pill">{track.tag}</span>
+                <div className="tracks-tab-content">
+                    <h4 style={{ fontSize: "15px", fontWeight: "700", marginBottom: "12px", color: "#0f172a" }}>
+                        Day 1 Core Theory Tracks
+                    </h4>
+                    <div className="tracks-list-grid">
+                        {(EVENT_DATA.tracks || []).map((t) => (
+                            <div key={t.id} className="track-detail-card">
+                                <div className="track-badge">{t.tag}</div>
+                                <h4>{t.name}</h4>
+                                <p>{t.summary}</p>
                             </div>
-                            <p className="track-detail-desc">{track.summary}</p>
-                        </div>
-                    ))}
+                        ))}
+                    </div>
 
-                    <div className="schedule-divider-badge" style={{ margin: "16px 0 4px" }}>
-                        Day 2 &bull; Selectable Practical Domains (Pick 1 for All-Day Lab)
-                    </div>
-                    {EVENT_DATA.day2Domains.map((dom) => (
-                        <div key={dom.id} className="track-detail-card">
-                            <div className="track-detail-head">
-                                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                                    <span className="day2-card-icon">
-                                        {renderTrackIcon(dom.id)}
-                                    </span>
-                                    <span className="track-detail-title">{dom.title}</span>
-                                </div>
-                                <span className="day2-banner-pill">{dom.tag}</span>
+                    <h4 style={{ fontSize: "15px", fontWeight: "700", margin: "24px 0 12px", color: "#0f172a" }}>
+                        Day 2 Hands-on Domains (Choose 1)
+                    </h4>
+                    <div className="tracks-list-grid">
+                        {(EVENT_DATA.day2Domains || []).map((d) => (
+                            <div key={d.id} className="track-detail-card">
+                                <div className="track-badge">{d.tag}</div>
+                                <h4>{d.title}</h4>
+                                <p>{d.desc}</p>
                             </div>
-                            <p className="track-detail-desc">{dom.desc}</p>
-                        </div>
-                    ))}
+                        ))}
+                    </div>
                 </div>
             )}
 
-            {/* TAB 3: PERKS */}
             {activeEventTab === "perks" && (
                 <div className="perks-grid">
-                    {EVENT_DATA.perks.map((perk, pIdx) => (
+                    {(EVENT_DATA.perks || []).map((perk, pIdx) => (
                         <div key={pIdx} className="perk-card">
-                            <div className="perk-card-title">
-                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
-                                {perk.title}
-                            </div>
+                            <div className="perk-title">{perk.title}</div>
                             <p>{perk.description}</p>
                         </div>
                     ))}
                 </div>
             )}
 
-            {/* TAB 4: FAQS */}
             {activeEventTab === "faqs" && (
                 <div className="faqs-list">
-                    {EVENT_DATA.faqs.map((faq, fIdx) => (
+                    {(EVENT_DATA.faqs || []).map((faq, fIdx) => (
                         <div key={fIdx} className="faq-card">
                             <h4>{faq.q}</h4>
                             <p>{faq.a}</p>
@@ -576,7 +694,12 @@ export default function App() {
             {/* HEADER */}
             <header className="site-header">
                 <div className="header-inner">
-                    <div className="brand">
+                    <div
+                        className="brand"
+                        onClick={handleLogoClick}
+                        title="Triple-click for Secret Offline Desk"
+                        style={{ cursor: "pointer", userSelect: "none" }}
+                    >
                         <img src={aceLogo} alt="ACM Logo" className="header-logo" />
                         <div className="brand-text">
                             <strong>SRKR ACM CHAPTER</strong>
@@ -593,6 +716,108 @@ export default function App() {
 
             {/* MAIN CONTENT */}
             <main className="main-content">
+                {/* VERIFIED ATTENDEE PASS VIEW (When scanned via camera) */}
+                {scannedPassToken && (
+                    <section className="registration-wrapper" style={{ maxWidth: "460px", margin: "32px auto 48px" }}>
+                        <div className="registration-card" style={{ textAlign: "center", padding: "32px 24px", borderRadius: "24px" }}>
+                            {scannedLoading ? (
+                                <div style={{ padding: "40px 20px" }}>
+                                    <div className="spinner" style={{ margin: "0 auto 16px" }}></div>
+                                    <p style={{ color: "#94a3b8", fontWeight: "600" }}>Verifying Attendee Pass...</p>
+                                </div>
+                            ) : scannedError ? (
+                                <div>
+                                    <div style={{ width: "56px", height: "56px", borderRadius: "50%", background: "rgba(239, 68, 68, 0.15)", color: "#ef4444", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px", fontSize: "24px", fontWeight: "bold" }}>
+                                        ✕
+                                    </div>
+                                    <div style={{ display: "inline-block", background: "rgba(239, 68, 68, 0.2)", color: "#f87171", fontSize: "11px", fontWeight: "800", textTransform: "uppercase", letterSpacing: "1px", padding: "4px 12px", borderRadius: "999px", marginBottom: "12px" }}>
+                                        Invalid Pass
+                                    </div>
+                                    <h2 style={{ color: "#fff", fontSize: "20px", marginBottom: "8px" }}>Attendee Not Found</h2>
+                                    <p style={{ color: "#94a3b8", fontSize: "14px", marginBottom: "20px" }}>{scannedError}</p>
+                                    <button
+                                        type="button"
+                                        className="register-another-btn"
+                                        onClick={() => {
+                                            setScannedPassToken(null);
+                                            window.history.pushState({}, "", "/");
+                                        }}
+                                    >
+                                        Return to Event Home
+                                    </button>
+                                </div>
+                            ) : scannedAttendee ? (
+                                <div>
+                                    <div style={{ display: "inline-block", background: "rgba(16, 185, 129, 0.2)", color: "#34d399", fontSize: "11px", fontWeight: "800", textTransform: "uppercase", letterSpacing: "1.5px", padding: "6px 14px", borderRadius: "999px", marginBottom: "12px", border: "1px solid rgba(16, 185, 129, 0.4)" }}>
+                                        VALID ATTENDEE PASS ✓
+                                    </div>
+                                    <h1 style={{ color: "#fff", fontSize: "22px", fontWeight: "800", margin: "0 0 4px" }}>
+                                        {scannedAttendee.name}
+                                    </h1>
+                                    <p style={{ color: "#94a3b8", fontSize: "13px", margin: "0 0 24px" }}>
+                                        Xcelerate-2K26 &bull; SRKR ACM Chapter
+                                    </p>
+
+                                    <div className="submitted-receipt-card" style={{ textAlign: "left", marginBottom: "20px" }}>
+                                        <div className="submitted-receipt-row">
+                                            <span className="submitted-label">College Roll No</span>
+                                            <span className="submitted-val">{scannedAttendee.registrationNumber}</span>
+                                        </div>
+                                        <div className="submitted-receipt-row">
+                                            <span className="submitted-label">Branch &amp; Section</span>
+                                            <span className="submitted-val">{scannedAttendee.branch} &bull; Sec {scannedAttendee.section}</span>
+                                        </div>
+                                        <div className="submitted-receipt-row">
+                                            <span className="submitted-label">Membership</span>
+                                            <span className="submitted-val">
+                                                {scannedAttendee.isAcmMember ? "🌟 ACE Member (Verified)" : "🎓 Regular Participant"}
+                                            </span>
+                                        </div>
+                                        <div className="submitted-receipt-row">
+                                            <span className="submitted-label">Payment Status</span>
+                                            <span className="submitted-val" style={{ color: "#34d399", fontWeight: "700" }}>
+                                                {scannedAttendee.paymentMode === "Offline" ? "Offline Desk (Cash)" : "Online (UPI) ✓"}
+                                            </span>
+                                        </div>
+                                        <div className="submitted-receipt-row">
+                                            <span className="submitted-label">Pass Code</span>
+                                            <span className="submitted-val" style={{ fontFamily: "monospace", color: "#38bdf8" }}>
+                                                {scannedAttendee.qrToken}
+                                            </span>
+                                        </div>
+                                    </div>
+
+                                    <div style={{
+                                        padding: "14px",
+                                        borderRadius: "12px",
+                                        fontWeight: "700",
+                                        fontSize: "14px",
+                                        marginBottom: "24px",
+                                        background: scannedAttendee.attendanceMarked ? "rgba(16, 185, 129, 0.15)" : "rgba(245, 158, 11, 0.15)",
+                                        color: scannedAttendee.attendanceMarked ? "#34d399" : "#fbbf24",
+                                        border: `1px solid ${scannedAttendee.attendanceMarked ? "rgba(16, 185, 129, 0.3)" : "rgba(245, 158, 11, 0.3)"}`
+                                    }}>
+                                        {scannedAttendee.attendanceMarked
+                                            ? `✓ Attendance Recorded (${new Date(scannedAttendee.attendanceMarkedAt).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })})`
+                                            : "⏳ Ready for Check-in at Entry Desk"}
+                                    </div>
+
+                                    <button
+                                        type="button"
+                                        className="register-another-btn"
+                                        onClick={() => {
+                                            setScannedPassToken(null);
+                                            window.history.pushState({}, "", "/");
+                                        }}
+                                    >
+                                        Return to Event Home
+                                    </button>
+                                </div>
+                            ) : null}
+                        </div>
+                    </section>
+                )}
+
                 {/* HERO BANNER */}
                 <section className="hero-wrapper">
                     <div className="hero-pill-badge">
@@ -613,7 +838,7 @@ export default function App() {
                     </div>
 
                     <p className="hero-lead-text">
-                        A 2-day technical symposium by SRKR ACM. Day 1 covers core theory, followed by a dedicated full-day hands-on workshop in your chosen domain on Day 2.
+                        A 2-day technical symposium by SRKR ACM. Day 1 foundational theory, followed by a dedicated full-day hands-on workshop in your chosen domain on Day 2.
                     </p>
 
                     <div className="hero-meta-strip">
@@ -628,29 +853,6 @@ export default function App() {
                         <div className="hero-meta-item">
                             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"></path></svg>
                             SRKR Engineering College
-                        </div>
-                    </div>
-
-                    <div className="hero-tracks-section">
-                        <div className="hero-tracks-label">Core Tracks &amp; Domains</div>
-                        <div className="hero-tracks-grid">
-                            {EVENT_DATA.tracks.map((track) => (
-                                <button
-                                    key={track.id}
-                                    type="button"
-                                    className="hero-track-card"
-                                    onClick={() => {
-                                        setActiveEventTab("tracks");
-                                        setShowEventModal(true);
-                                    }}
-                                    title="Click to view track curriculum"
-                                >
-                                    <span className="track-icon-box">
-                                        {renderTrackIcon(track.id)}
-                                    </span>
-                                    {track.name}
-                                </button>
-                            ))}
                         </div>
                     </div>
 
@@ -669,14 +871,32 @@ export default function App() {
                     </div>
 
                     <div className="hero-scroll-cue">
-                        <span>Register in 3 Quick Steps Below</span>
+                        <span>Register Below (Phase 1 of 3)</span>
                         <svg className="cue-arrow-down" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="6 9 12 15 18 9"></polyline></svg>
                     </div>
                 </section>
 
                 {/* PROGRESSIVE FORM CONTAINER */}
                 <section className="form-section">
-                    <div className="registration-card">
+                    <div className="registration-card" ref={formCardRef} id="register-flow">
+                        {/* ADMIN OFFLINE DESK BANNER */}
+                        {isOfflineDesk && (
+                            <div className="offline-desk-banner">
+                                <div className="offline-desk-info">
+                                    <span className="offline-desk-tag">🛠️ Admin Mode</span>
+                                    <strong>Offline Desk Registration (Cash Payment)</strong>
+                                    <p>Payment screenshot and UTR are bypassed. Cash collected at desk.</p>
+                                </div>
+                                <button
+                                    type="button"
+                                    className="offline-desk-exit-btn"
+                                    onClick={handleExitOfflineDesk}
+                                >
+                                    Exit Desk Mode
+                                </button>
+                            </div>
+                        )}
+
                         {existingSubmission ? (
                             <div className="already-submitted-container">
                                 <div className="submitted-status-icon">
@@ -686,16 +906,28 @@ export default function App() {
                                 </div>
 
                                 <div className="submitted-status-badge">
-                                    Registration Recorded
+                                    Registration Confirmed
                                 </div>
 
                                 <h2 className="submitted-heading">
-                                    You’ve already registered for Xcelerate-2K26!
+                                    You’ve registered for Xcelerate-2K26!
                                 </h2>
 
                                 <p className="submitted-desc">
-                                    Your response has already been submitted and confirmed from this device. Here is your official pass summary:
+                                    Your response is safely recorded. Here is your official pass summary:
                                 </p>
+
+                                {/* ATTENDANCE PASS QR CODE */}
+                                {passQrDataUrl && (
+                                    <div className="pass-qr-card">
+                                        <div className="pass-qr-header">
+                                            <span>Universal Attendance Pass</span>
+                                            <span className="pass-tag">Scan on Event Days</span>
+                                        </div>
+                                        <img src={passQrDataUrl} alt="Attendance Pass QR Code" className="pass-qr-image" />
+                                        <div className="pass-token-code">{existingSubmission.qrToken}</div>
+                                    </div>
+                                )}
 
                                 <div className="submitted-receipt-card">
                                     <div className="submitted-receipt-row">
@@ -713,15 +945,15 @@ export default function App() {
                                     <div className="submitted-receipt-row">
                                         <span className="submitted-label">Category</span>
                                         <span className="submitted-val">
-                                            {existingSubmission.isAcmMember ? "ACM Body Member (2025–2029)" : "Regular Participant"}
+                                            {existingSubmission.isAcmMember ? "🌟 ACE Member (Verified)" : "🎓 Regular Participant"}
                                         </span>
                                     </div>
-                                    {existingSubmission.qrToken && (
-                                        <div className="submitted-receipt-row">
-                                            <span className="submitted-label">Attendance Pass</span>
-                                            <span className="submitted-token-code">{existingSubmission.qrToken}</span>
-                                        </div>
-                                    )}
+                                    <div className="submitted-receipt-row">
+                                        <span className="submitted-label">Payment Status</span>
+                                        <span className="submitted-val" style={{ color: "#16a34a", fontWeight: "700" }}>
+                                            {existingSubmission.paymentMode === "Offline" ? "Offline Desk (Cash)" : "Online (UPI)"}
+                                        </span>
+                                    </div>
                                     <div className="submitted-receipt-row">
                                         <span className="submitted-label">Email Confirmation</span>
                                         <span className="submitted-val">{existingSubmission.email}</span>
@@ -731,520 +963,642 @@ export default function App() {
                                 <div className="submitted-notice-box">
                                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
                                     <div>
-                                        {existingSubmission.isAcmMember ? (
-                                            <span>
-                                                Your confirmation email has been dispatched to <strong>{existingSubmission.email}</strong>.
-                                            </span>
-                                        ) : (
-                                            <span>
-                                                Your personalized <strong>Attendance QR Code</strong> has been sent to <strong>{existingSubmission.email}</strong>. Please present it on both days of the event.
-                                            </span>
-                                        )}
+                                        Your personalized <strong>Attendance QR Code</strong> has also been sent to <strong>{existingSubmission.email}</strong>. Please take a screenshot of this pass!
                                     </div>
+                                </div>
+
+                                <div style={{ marginTop: "24px" }}>
+                                    <button
+                                        type="button"
+                                        className="register-another-btn"
+                                        onClick={handleRegisterAnother}
+                                    >
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                                        Register Another Attendee
+                                    </button>
                                 </div>
                             </div>
                         ) : (
                             <>
-                                {/* STEPPER PROGRESS BAR */}
+                                {/* 3-PHASE PROGRESS NAV */}
                                 <div className="stepper-nav">
-                            <div className="stepper-line-bg" />
-                            <div
-                                className="stepper-line-progress"
-                                style={{
-                                    width: currentStep === 1 ? "0%" : currentStep === 2 ? "50%" : "92%",
-                                }}
-                            />
-
-                            {/* NODE 1 */}
-                            <button
-                                type="button"
-                                className={`step-node ${currentStep === 1 ? "active" : currentStep > 1 ? "completed" : ""}`}
-                                onClick={() => currentStep > 1 && setCurrentStep(1)}
-                            >
-                                <div className="step-bubble">
-                                    {currentStep > 1 ? (
-                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.2"><polyline points="20 6 9 17 4 12"></polyline></svg>
-                                    ) : (
-                                        "1"
-                                    )}
-                                </div>
-                                <span className="step-title">Student Info</span>
-                            </button>
-
-                            {/* NODE 2 */}
-                            <button
-                                type="button"
-                                className={`step-node ${currentStep === 2 ? "active" : currentStep > 2 ? "completed" : ""}`}
-                                onClick={() => currentStep > 2 && setCurrentStep(2)}
-                                disabled={currentStep < 2}
-                            >
-                                <div className="step-bubble">
-                                    {currentStep > 2 ? (
-                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.2"><polyline points="20 6 9 17 4 12"></polyline></svg>
-                                    ) : (
-                                        "2"
-                                    )}
-                                </div>
-                                <span className="step-title">Membership</span>
-                            </button>
-
-                            {/* NODE 3 */}
-                            <button
-                                type="button"
-                                className={`step-node ${currentStep === 3 ? "active" : ""}`}
-                                disabled={currentStep < 3}
-                            >
-                                <div className="step-bubble">3</div>
-                                <span className="step-title">Payment &amp; Pass</span>
-                            </button>
-                        </div>
-
-                        {/* ========================================================
-                            SECTION 1: STUDENT DETAILS
-                        ======================================================== */}
-                        {currentStep === 1 && (
-                            <div className="step-pane">
-                                <div className="step-header-box">
-                                    <span className="step-header-tag">Step 01 of 03</span>
-                                    <h3 className="step-header-title">Student Academic Information</h3>
-                                    <p className="step-header-desc">
-                                        Please provide your genuine details as recorded in college.
-                                    </p>
-                                </div>
-
-                                {/* 1. FULL NAME */}
-                                <div className="field">
-                                    <label>
-                                        <svg className="field-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
-                                        Full Name <span className="req-star">*</span>
-                                    </label>
-                                    <input
-                                        type="text"
-                                        name="name"
-                                        value={formData.name}
-                                        onChange={handleChange}
-                                        placeholder="e.g. Gopala Krishna Saketh"
-                                        required
+                                    <div className="stepper-line-bg" />
+                                    <div
+                                        className="stepper-line-progress"
+                                        style={{
+                                            width: currentStep === 1 ? "0%" : currentStep === 2 ? "50%" : "92%",
+                                        }}
                                     />
-                                </div>
 
-                                {/* 2. EMAIL (CONCAT @gmail.com) */}
-                                <div className="field">
-                                    <label>
-                                        <svg className="field-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>
-                                        Gmail Address <span className="req-star">*</span>
-                                    </label>
-                                    <div className="email-input-wrapper">
-                                        <input
-                                            type="text"
-                                            name="email"
-                                            value={formData.email}
-                                            onChange={handleChange}
-                                            placeholder="Enter your Gmail username"
-                                            required
-                                        />
-                                        <span className="gmail-suffix">@gmail.com</span>
-                                    </div>
-                                    <span style={{ fontSize: "12px", color: "#64748b", marginTop: "4px", display: "block" }}>
-                                        Event pass and confirmation will be delivered to this Gmail address.
-                                    </span>
-                                </div>
-
-                                {/* 3. REGISTRATION NUMBER & 6. WHATSAPP (2 COLUMNS) */}
-                                <div className="grid-2-col">
-                                    <div className="field">
-                                        <label>
-                                            <svg className="field-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4" width="18" height="16" rx="2"></rect><line x1="7" y1="8" x2="17" y2="8"></line><line x1="7" y1="12" x2="17" y2="12"></line><line x1="7" y1="16" x2="13" y2="16"></line></svg>
-                                            Registration Number <span className="req-star">*</span>
-                                        </label>
-                                        <input
-                                            type="text"
-                                            name="registrationNumber"
-                                            value={formData.registrationNumber}
-                                            onChange={handleChange}
-                                            placeholder="e.g. 23B91A05XX"
-                                            style={{ textTransform: "uppercase" }}
-                                            required
-                                        />
-                                    </div>
-
-                                    <div className="field">
-                                        <label>
-                                            <svg className="field-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path></svg>
-                                            WhatsApp Number <span className="req-star">*</span>
-                                        </label>
-                                        <input
-                                            type="tel"
-                                            name="whatsappNumber"
-                                            value={formData.whatsappNumber}
-                                            onChange={handleChange}
-                                            placeholder="10-digit mobile number"
-                                            pattern="[0-9]{10}"
-                                            maxLength="10"
-                                            required
-                                        />
-                                    </div>
-                                </div>
-
-                                {/* 4. BRANCH & 5. SECTION (2 COLUMNS) */}
-                                <div className="grid-2-col">
-                                    <div className="field">
-                                        <label>
-                                            <svg className="field-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 10v6M2 10l10-5 10 5-10 5z"></path><path d="M6 12v5c3 3 9 3 12 0v-5"></path></svg>
-                                            Branch <span className="req-star">*</span>
-                                        </label>
-                                        <select
-                                            name="branch"
-                                            value={formData.branch}
-                                            onChange={handleChange}
-                                            required
-                                        >
-                                            <option value="">Select Branch</option>
-                                            {BRANCH_OPTIONS.map((branch) => (
-                                                <option key={branch} value={branch}>
-                                                    {branch}
-                                                </option>
-                                            ))}
-                                        </select>
-                                    </div>
-
-                                    <div className="field">
-                                        <label>
-                                            <svg className="field-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="9" y1="3" x2="9" y2="21"></line></svg>
-                                            Section <span className="req-star">*</span>
-                                        </label>
-                                        <select
-                                            name="section"
-                                            value={formData.section}
-                                            onChange={handleChange}
-                                            required
-                                        >
-                                            <option value="">Select Section</option>
-                                            {SECTION_OPTIONS.map((sec) => (
-                                                <option key={sec} value={sec}>
-                                                    Section {sec}
-                                                </option>
-                                            ))}
-                                        </select>
-                                    </div>
-                                </div>
-
-                                {/* ERROR NOTIFICATION */}
-                                {error && (
-                                    <div className="error-message" style={{ margin: "16px 0 8px" }}>
-                                        {error}
-                                    </div>
-                                )}
-
-                                {/* STEP 1 ACTION BUTTON */}
-                                <div className="step-nav-row">
+                                    {/* NODE 1 */}
                                     <button
                                         type="button"
-                                        className="btn-nav-next"
-                                        onClick={handleNextFromStep1}
-                                    >
-                                        Continue to Chapter Status
-                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="9 18 15 12 9 6"></polyline></svg>
-                                    </button>
-                                </div>
-                            </div>
-                        )}
-
-                        {/* ========================================================
-                            SECTION 2: ACM BODY MEMBERSHIP SELECTION
-                        ======================================================== */}
-                        {currentStep === 2 && (
-                            <div className="step-pane">
-                                <div className="step-header-box">
-                                    <span className="step-header-tag">Step 02 of 03</span>
-                                    <h3 className="step-header-title">ACM Chapter Membership</h3>
-                                    <p className="step-header-desc">
-                                        Select whether you are a registered ACM Council Member or a General Attendee.
-                                    </p>
-                                </div>
-
-                                <div className="field">
-                                    <label style={{ fontSize: "14px", marginBottom: "12px" }}>
-                                        Are you an active ACM Body Member? <span className="req-star">*</span>
-                                    </label>
-                                    <div className="acm-member-select-grid">
-                                        <div
-                                            className={`acm-member-card ${!formData.isAcmMember ? "active" : ""}`}
-                                            onClick={() => handleAcmToggle(false)}
-                                        >
-                                            <input
-                                                type="radio"
-                                                name="isAcmMember"
-                                                checked={!formData.isAcmMember}
-                                                onChange={() => handleAcmToggle(false)}
-                                            />
-                                            <div className="acm-card-body">
-                                                <h4>No, Regular Participant</h4>
-                                                <p>I am attending the two-day symposium (A personalized Attendance QR pass will be emailed to you).</p>
-                                            </div>
-                                        </div>
-
-                                        <div
-                                            className={`acm-member-card ${formData.isAcmMember ? "active" : ""}`}
-                                            onClick={() => handleAcmToggle(true)}
-                                        >
-                                            <input
-                                                type="radio"
-                                                name="isAcmMember"
-                                                checked={formData.isAcmMember}
-                                                onChange={() => handleAcmToggle(true)}
-                                            />
-                                            <div className="acm-card-body">
-                                                <h4>Yes, ACM Body Member</h4>
-                                                <p>Batch 2025–2029 (Requires your assigned ACM ID screenshot verification).</p>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                {error && (
-                                    <div className="error-message" style={{ margin: "16px 0 8px" }}>
-                                        {error}
-                                    </div>
-                                )}
-
-                                {/* STEP 2 BUTTONS */}
-                                <div className="step-nav-row">
-                                    <button
-                                        type="button"
-                                        className="btn-nav-back"
+                                        className={`step-node ${currentStep === 1 ? "active" : "completed"}`}
                                         onClick={() => {
-                                            setError("");
                                             setCurrentStep(1);
+                                            scrollToForm();
                                         }}
                                     >
-                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="15 18 9 12 15 6"></polyline></svg>
-                                        Back to Info
+                                        <div className="step-bubble">
+                                            {currentStep > 1 ? (
+                                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.2"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                                            ) : (
+                                                "1"
+                                            )}
+                                        </div>
+                                        <span className="step-title">Membership</span>
                                     </button>
 
+                                    {/* NODE 2 */}
                                     <button
                                         type="button"
-                                        className="btn-nav-next"
-                                        onClick={handleNextFromStep2}
+                                        className={`step-node ${currentStep === 2 ? "active" : currentStep > 2 ? "completed" : ""}`}
+                                        onClick={() => {
+                                            if (currentStep > 2) {
+                                                setCurrentStep(2);
+                                                scrollToForm();
+                                            }
+                                        }}
+                                        disabled={currentStep < 2}
                                     >
-                                        Continue to Payment &amp; Pass
-                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                                        <div className="step-bubble">
+                                            {currentStep > 2 ? (
+                                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.2"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                                            ) : (
+                                                "2"
+                                            )}
+                                        </div>
+                                        <span className="step-title">Student Details</span>
+                                    </button>
+
+                                    {/* NODE 3 */}
+                                    <button
+                                        type="button"
+                                        className={`step-node ${currentStep === 3 ? "active" : ""}`}
+                                        disabled={currentStep < 3}
+                                    >
+                                        <div className="step-bubble">3</div>
+                                        <span className="step-title">{isOfflineDesk ? "Offline Desk" : "Payment & Pass"}</span>
                                     </button>
                                 </div>
-                            </div>
-                        )}
 
-                        {/* ========================================================
-                            SECTION 3: PAYMENT, PROOF & DECLARATION
-                        ======================================================== */}
-                        {currentStep === 3 && (
-                            <form onSubmit={handleSubmit} noValidate className="step-pane">
-                                <div className="step-header-box">
-                                    <span className="step-header-tag">Step 03 of 03</span>
-                                    <h3 className="step-header-title">Registration Payment &amp; Confirmation</h3>
-                                    <p className="step-header-desc">
-                                        Scan the QR code, upload payment proof, and complete your registration.
-                                    </p>
-                                </div>
+                                {/* ========================================================
+                                    PHASE 1: MEMBERSHIP CHECK & WHATSAPP NUMBER ONLY
+                                ======================================================== */}
+                                {currentStep === 1 && (
+                                    <div className="step-pane">
+                                        <div className="step-header-box">
+                                            <span className="step-header-tag">Phase 01 of 03</span>
+                                            <h3 className="step-header-title">ACE Chapter Membership Check</h3>
+                                            <p className="step-header-desc">
+                                                Select your membership status to proceed.
+                                            </p>
+                                        </div>
 
-                                {/* 1. PAYMENT QR CARD (FOR BOTH YES & NO) */}
-                                <div className="payment-qr-card">
-                                    <h4 style={{ fontSize: "16px", fontWeight: "700", color: "#0f172a", marginBottom: "4px" }}>
-                                        Scan &amp; Pay via UPI
-                                    </h4>
-                                    <p style={{ fontSize: "13px", color: "#64748b", marginBottom: "8px" }}>
-                                        Google Pay &bull; PhonePe &bull; Paytm &bull; BHIM
-                                    </p>
-
-                                    <div className="qr-placeholder-box">
-                                        <svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
-                                            <rect x="3" y="3" width="7" height="7"></rect>
-                                            <rect x="14" y="3" width="7" height="7"></rect>
-                                            <rect x="14" y="14" width="7" height="7"></rect>
-                                            <rect x="3" y="14" width="7" height="7"></rect>
-                                            <line x1="7" y1="17" x2="7" y2="17.01"></line>
-                                            <line x1="17" y1="7" x2="17" y2="7.01"></line>
-                                        </svg>
-                                        <span className="qr-placeholder-text">PAYMENT QR CODE</span>
-                                        <span style={{ fontSize: "10px", color: "#94a3b8", marginTop: "2px" }}>[Placeholder]</span>
-                                    </div>
-
-                                    <div className="upi-id-badge">
-                                        UPI ID: srkr.acm@upi
-                                    </div>
-                                    <p style={{ fontSize: "12px", color: "#64748b", marginTop: "8px" }}>
-                                        Make payment, copy the 12-digit UTR ID, and upload the transaction screenshot below.
-                                    </p>
-                                </div>
-
-                                {/* 2. IF ACM MEMBER: ACM ID SCREENSHOT (MAX 1MB) */}
-                                {formData.isAcmMember && (
-                                    <div className="file-upload-block">
-                                        <label>
-                                            <span>
-                                                ACM ID <span className="req-star">*</span>
-                                            </span>
-                                            <span className="file-size-badge">Max 1 MB</span>
-                                        </label>
-
-                                        <input
-                                            type="file"
-                                            accept="image/png, image/jpeg, image/jpg, image/webp"
-                                            ref={acmFileInputRef}
-                                            style={{ display: "none" }}
-                                            onChange={handleAcmScreenshotChange}
-                                        />
-
-                                        {!previews.acmGroup ? (
-                                            <div
-                                                className="file-dropzone"
-                                                onClick={() => acmFileInputRef.current?.click()}
-                                            >
-                                                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
-                                                <div className="file-dropzone-prompt">
-                                                    <strong>Click to upload</strong> or drag &amp; drop ACM ID screenshot
-                                                </div>
-                                                <span style={{ fontSize: "11px", color: "#94a3b8" }}>
-                                                    PNG, JPG or WEBP (Max 1 MB)
-                                                </span>
+                                        {/* CHOICE CARDS */}
+                                        <div className="membership-choice-container">
+                                            <div className="membership-choice-label">
+                                                Are you an ACE / ACM Chapter Member? <span className="req-star">*</span>
                                             </div>
-                                        ) : (
-                                            <div className="file-preview-card">
-                                                <img src={previews.acmGroup.url} alt="ACM ID Screenshot Preview" className="preview-thumb" />
-                                                <div className="preview-meta">
-                                                    <div className="preview-name">{previews.acmGroup.name}</div>
-                                                    <div className="preview-size">{previews.acmGroup.size} &bull; Ready</div>
+                                            <div className="membership-cards-grid">
+                                                <div
+                                                    className={`membership-card ${membershipChoice === "yes" ? "active" : ""}`}
+                                                    onClick={() => handleMembershipChoiceChange("yes")}
+                                                >
+                                                    <div className="card-radio-dot">
+                                                        {membershipChoice === "yes" && <div className="dot-inner" />}
+                                                    </div>
+                                                    <div className="card-text-block">
+                                                        <h4>🌟 Yes, I am an ACE Member</h4>
+                                                        <p>Batch 2025 or 2nd-Year Lateral Member</p>
+                                                    </div>
                                                 </div>
-                                                <button type="button" className="preview-remove-btn" onClick={removeAcmScreenshot}>
-                                                    Remove
-                                                </button>
+
+                                                <div
+                                                    className={`membership-card ${membershipChoice === "no" ? "active" : ""}`}
+                                                    onClick={() => handleMembershipChoiceChange("no")}
+                                                >
+                                                    <div className="card-radio-dot">
+                                                        {membershipChoice === "no" && <div className="dot-inner" />}
+                                                    </div>
+                                                    <div className="card-text-block">
+                                                        <h4>🎓 No, Regular Participant</h4>
+                                                        <p>General symposium attendee</p>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* IF HE CLICKS ACE MEMBER: IN THAT ONLY IT CONTAINS THE WHATSAPP NUMBER LABEL */}
+                                        {membershipChoice === "yes" && (
+                                            <div className="phase1-phone-container">
+                                                <div className="field">
+                                                    <label>
+                                                        <svg className="field-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path></svg>
+                                                        Registered WhatsApp Number <span className="req-star">*</span>
+                                                    </label>
+                                                    <input
+                                                        type="tel"
+                                                        name="whatsappNumber"
+                                                        value={formData.whatsappNumber}
+                                                        onChange={(e) => {
+                                                            const val = e.target.value.replace(/\D/g, "").slice(0, 10);
+                                                            setFormData((prev) => ({ ...prev, whatsappNumber: val }));
+                                                            if (error) setError("");
+                                                        }}
+                                                        placeholder="10-digit WhatsApp number"
+                                                        pattern="[0-9]{10}"
+                                                        maxLength="10"
+                                                        className="mobile-phone-input"
+                                                    />
+                                                    <span className="field-helper-text">
+                                                        Enter your registered 10-digit WhatsApp number. We'll automatically verify and fetch your details.
+                                                    </span>
+                                                </div>
                                             </div>
                                         )}
-                                    </div>
-                                )}
 
-                                {/* 3. PAYMENT SCREENSHOT (MAX 10MB) - FOR BOTH */}
-                                <div className="file-upload-block">
-                                    <label>
-                                        <span>
-                                            Payment Transaction Screenshot <span className="req-star">*</span>
-                                        </span>
-                                        <span className="file-size-badge">Max 10 MB</span>
-                                    </label>
-
-                                    <input
-                                        type="file"
-                                        accept="image/png, image/jpeg, image/jpg, image/webp"
-                                        ref={paymentFileInputRef}
-                                        style={{ display: "none" }}
-                                        onChange={handlePaymentScreenshotChange}
-                                    />
-
-                                    {!previews.payment ? (
-                                        <div
-                                            className="file-dropzone"
-                                            onClick={() => paymentFileInputRef.current?.click()}
-                                        >
-                                            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
-                                            <div className="file-dropzone-prompt">
-                                                <strong>Click to upload</strong> or drag &amp; drop Payment Screenshot
+                                        {/* ERROR NOTIFICATION */}
+                                        {error && (
+                                            <div className="error-message" style={{ margin: "16px 0 8px" }}>
+                                                {error}
                                             </div>
-                                            <span style={{ fontSize: "11px", color: "#94a3b8" }}>
-                                                PNG, JPG or WEBP (Max 10 MB)
-                                            </span>
-                                        </div>
-                                    ) : (
-                                        <div className="file-preview-card">
-                                            <img src={previews.payment.url} alt="Payment Screenshot Preview" className="preview-thumb" />
-                                            <div className="preview-meta">
-                                                <div className="preview-name">{previews.payment.name}</div>
-                                                <div className="preview-size">{previews.payment.size} &bull; Ready</div>
-                                            </div>
-                                            <button type="button" className="preview-remove-btn" onClick={removePaymentScreenshot}>
-                                                Remove
+                                        )}
+
+                                        {/* PHASE 1 ACTION BUTTON */}
+                                        <div className="step-nav-row" style={{ marginTop: "24px" }}>
+                                            <button
+                                                type="button"
+                                                className="btn-nav-next"
+                                                onClick={handleNextFromPhase1}
+                                                disabled={memberLoading || !membershipChoice}
+                                            >
+                                                {memberLoading ? (
+                                                    <span className="btn-spinner-content">
+                                                        <span className="btn-spinner" />
+                                                        Verifying Number...
+                                                    </span>
+                                                ) : (
+                                                    <>
+                                                        Next &bull; Student Details
+                                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                                                    </>
+                                                )}
                                             </button>
                                         </div>
-                                    )}
-                                </div>
-
-                                {/* 4. UNIQUE TRANSACTION REFERENCE (UTR) ID */}
-                                <div className="field" style={{ marginTop: "18px" }}>
-                                    <label>
-                                        <svg className="field-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"></rect><line x1="1" y1="10" x2="23" y2="10"></line></svg>
-                                        Unique Transaction Reference (UTR) ID <span className="req-star">*</span>
-                                    </label>
-                                    <input
-                                        type="text"
-                                        name="utrId"
-                                        value={formData.utrId}
-                                        onChange={handleChange}
-                                        placeholder="e.g. 4028XXXXXXXX or UPI Reference Number"
-                                        style={{ textTransform: "uppercase" }}
-                                        required
-                                    />
-                                </div>
-
-                                {/* 5. DECLARATION CHECKBOX */}
-                                <div className="declaration-container">
-                                    <label className="declaration-label">
-                                        <input
-                                            type="checkbox"
-                                            name="declarationConfirmed"
-                                            checked={formData.declarationConfirmed}
-                                            onChange={handleChange}
-                                            required
-                                        />
-                                        <span>
-                                            {formData.isAcmMember
-                                                ? "I confirm that I am an active ACM Body Member (2025–2029) and the submitted details, ACM ID screenshot, and payment proof are genuine."
-                                                : "I confirm that the details provided, registration information, and payment screenshot are genuine and authentic."}
-                                        </span>
-                                    </label>
-                                </div>
-
-                                {/* ERROR BANNER */}
-                                {error && (
-                                    <div className="error-message" style={{ margin: "16px 0 8px" }}>
-                                        {error}
                                     </div>
                                 )}
 
-                                {/* STEP 3 ACTION BUTTONS */}
-                                <div className="step-nav-row">
-                                    <button
-                                        type="button"
-                                        className="btn-nav-back"
-                                        onClick={() => {
-                                            setError("");
-                                            setCurrentStep(2);
-                                        }}
-                                        disabled={loading}
-                                    >
-                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="15 18 9 12 15 6"></polyline></svg>
-                                        Back to Status
-                                    </button>
+                                {/* ========================================================
+                                    PHASE 2: STUDENT DETAILS (AUTOFILLED OR MANUAL)
+                                ======================================================== */}
+                                {currentStep === 2 && (
+                                    <div className="step-pane">
+                                        <div className="step-header-box">
+                                            <span className="step-header-tag">Phase 02 of 03</span>
+                                            <h3 className="step-header-title">
+                                                {formData.isAcmMember ? "Verified Member Details" : "Student Registration Details"}
+                                            </h3>
+                                            <p className="step-header-desc">
+                                                {formData.isAcmMember
+                                                    ? "Your ACE profile is verified. Fill in your college roll number and section to proceed."
+                                                    : "Enter your academic and contact details for event registration."}
+                                            </p>
+                                        </div>
 
-                                    <button
-                                        type="submit"
-                                        className="btn-nav-next"
-                                        disabled={loading}
-                                        style={{ background: "linear-gradient(135deg, #16a34a, #15803d)", boxShadow: "0 4px 16px rgba(22, 163, 74, 0.4)" }}
-                                    >
-                                        {loading ? (
-                                            <span style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                                                <span style={{ width: "16px", height: "16px", border: "2px solid #ffffff", borderTopColor: "transparent", borderRadius: "50%", display: "inline-block", animation: "spin 0.8s linear infinite" }} />
-                                                Processing...
-                                            </span>
-                                        ) : (
+                                        {/* IF ACE MEMBER: SLEEK READ-ONLY VERIFIED CARD + ONLY REMAINING DETAILS */}
+                                        {formData.isAcmMember ? (
                                             <>
-                                                Complete Registration
-                                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                                                <div className="verified-member-card">
+                                                    <div className="verified-card-header">
+                                                        <div className="verified-pill">
+                                                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                                                            Verified ACE Member
+                                                        </div>
+                                                    </div>
+                                                    <div className="verified-info-grid">
+                                                        <div className="verified-info-item">
+                                                            <span className="info-label">Full Name</span>
+                                                            <span className="info-value">{formData.name}</span>
+                                                        </div>
+                                                        <div className="verified-info-item">
+                                                            <span className="info-label">Gmail</span>
+                                                            <span className="info-value">{formData.email}@gmail.com</span>
+                                                        </div>
+                                                        <div className="verified-info-item">
+                                                            <span className="info-label">Branch</span>
+                                                            <span className="info-value">{formData.branch}</span>
+                                                        </div>
+                                                        <div className="verified-info-item">
+                                                            <span className="info-label">WhatsApp</span>
+                                                            <span className="info-value">{formData.whatsappNumber}</span>
+                                                        </div>
+                                                    </div>
+                                                    <div className="verified-card-footer">
+                                                        🔒 Verified from ACE 2025 Directory
+                                                    </div>
+                                                </div>
+
+                                                <div className="remaining-fields-notice">
+                                                    <strong>Please provide your college roll number and section:</strong>
+                                                </div>
+
+                                                <div className="grid-2-col">
+                                                    {/* COLLEGE ROLL NO */}
+                                                    <div className="field">
+                                                        <label>
+                                                            <svg className="field-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4" width="18" height="16" rx="2"></rect><line x1="7" y1="8" x2="17" y2="8"></line><line x1="7" y1="12" x2="17" y2="12"></line><line x1="7" y1="16" x2="13" y2="16"></line></svg>
+                                                            College Roll Number (Reg No) <span className="req-star">*</span>
+                                                        </label>
+                                                        <input
+                                                            type="text"
+                                                            name="registrationNumber"
+                                                            value={formData.registrationNumber}
+                                                            onChange={handleChange}
+                                                            placeholder="e.g. 24B91A05XX"
+                                                            style={{ textTransform: "uppercase" }}
+                                                            required
+                                                        />
+                                                    </div>
+
+                                                    {/* SECTION */}
+                                                    <div className="field">
+                                                        <label>
+                                                            <svg className="field-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2"></rect><line x1="9" y1="3" x2="9" y2="21"></line></svg>
+                                                            Section <span className="req-star">*</span>
+                                                        </label>
+                                                        <select
+                                                            name="section"
+                                                            value={formData.section}
+                                                            onChange={handleChange}
+                                                            required
+                                                        >
+                                                            <option value="">Select Section</option>
+                                                            {SECTION_OPTIONS.map((sec) => (
+                                                                <option key={sec} value={sec}>
+                                                                    Section {sec}
+                                                                </option>
+                                                            ))}
+                                                        </select>
+                                                    </div>
+                                                </div>
+                                            </>
+                                        ) : (
+                                            /* NON-MEMBER: MANUAL INPUTS */
+                                            <>
+                                                <div className="field">
+                                                    <label>
+                                                        <svg className="field-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+                                                        Full Name <span className="req-star">*</span>
+                                                    </label>
+                                                    <input
+                                                        type="text"
+                                                        name="name"
+                                                        value={formData.name}
+                                                        onChange={handleChange}
+                                                        placeholder="e.g. Gopala Krishna Saketh"
+                                                        required
+                                                    />
+                                                </div>
+
+                                                <div className="field">
+                                                    <label>
+                                                        <svg className="field-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>
+                                                        Gmail Address <span className="req-star">*</span>
+                                                    </label>
+                                                    <div className="email-input-wrapper">
+                                                        <input
+                                                            type="text"
+                                                            name="email"
+                                                            value={formData.email}
+                                                            onChange={handleChange}
+                                                            placeholder="Enter Gmail username"
+                                                            required
+                                                        />
+                                                        <span className="gmail-suffix">@gmail.com</span>
+                                                    </div>
+                                                </div>
+
+                                                <div className="field">
+                                                    <label>
+                                                        <svg className="field-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path></svg>
+                                                        WhatsApp Number <span className="req-star">*</span>
+                                                    </label>
+                                                    <input
+                                                        type="tel"
+                                                        name="whatsappNumber"
+                                                        value={formData.whatsappNumber}
+                                                        onChange={(e) => {
+                                                            const val = e.target.value.replace(/\D/g, "").slice(0, 10);
+                                                            setFormData((prev) => ({ ...prev, whatsappNumber: val }));
+                                                            if (error) setError("");
+                                                        }}
+                                                        placeholder="10-digit mobile number"
+                                                        pattern="[0-9]{10}"
+                                                        maxLength="10"
+                                                        required
+                                                    />
+                                                </div>
+
+                                                <div className="grid-2-col">
+                                                    <div className="field">
+                                                        <label>
+                                                            <svg className="field-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4" width="18" height="16" rx="2"></rect><line x1="7" y1="8" x2="17" y2="8"></line><line x1="7" y1="12" x2="17" y2="12"></line><line x1="7" y1="16" x2="13" y2="16"></line></svg>
+                                                            College Roll Number <span className="req-star">*</span>
+                                                        </label>
+                                                        <input
+                                                            type="text"
+                                                            name="registrationNumber"
+                                                            value={formData.registrationNumber}
+                                                            onChange={handleChange}
+                                                            placeholder="e.g. 24B91A05XX"
+                                                            style={{ textTransform: "uppercase" }}
+                                                            required
+                                                        />
+                                                    </div>
+
+                                                    <div className="field">
+                                                        <label>
+                                                            <svg className="field-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2"></rect><line x1="9" y1="3" x2="9" y2="21"></line></svg>
+                                                            Section <span className="req-star">*</span>
+                                                        </label>
+                                                        <select
+                                                            name="section"
+                                                            value={formData.section}
+                                                            onChange={handleChange}
+                                                            required
+                                                        >
+                                                            <option value="">Select Section</option>
+                                                            {SECTION_OPTIONS.map((sec) => (
+                                                                <option key={sec} value={sec}>
+                                                                    Section {sec}
+                                                                </option>
+                                                            ))}
+                                                        </select>
+                                                    </div>
+                                                </div>
+
+                                                <div className="field">
+                                                    <label>
+                                                        <svg className="field-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 10v6M2 10l10-5 10 5-10 5z"></path><path d="M6 12v5c3 3 9 3 12 0v-5"></path></svg>
+                                                        Branch <span className="req-star">*</span>
+                                                    </label>
+                                                    <select
+                                                        name="branch"
+                                                        value={formData.branch}
+                                                        onChange={handleChange}
+                                                        required
+                                                    >
+                                                        <option value="">Select Branch</option>
+                                                        {BRANCH_OPTIONS.map((branch) => (
+                                                            <option key={branch} value={branch}>
+                                                                {branch}
+                                                            </option>
+                                                        ))}
+                                                    </select>
+                                                </div>
                                             </>
                                         )}
-                                    </button>
-                                </div>
-                            </form>
-                        )}
+
+                                        {/* ERROR NOTIFICATION */}
+                                        {error && (
+                                            <div className="error-message" style={{ margin: "16px 0 8px" }}>
+                                                {error}
+                                            </div>
+                                        )}
+
+                                        {/* STEP 2 ACTION BUTTONS */}
+                                        <div className="step-nav-row" style={{ marginTop: "24px" }}>
+                                            <button
+                                                type="button"
+                                                className="btn-nav-back"
+                                                onClick={() => {
+                                                    setError("");
+                                                    setCurrentStep(1);
+                                                    scrollToForm();
+                                                }}
+                                            >
+                                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="15 18 9 12 15 6"></polyline></svg>
+                                                Back to Membership
+                                            </button>
+
+                                            <button
+                                                type="button"
+                                                className="btn-nav-next"
+                                                onClick={handleNextFromPhase2}
+                                            >
+                                                {isOfflineDesk ? "Continue to Offline Desk" : "Continue to Payment"}
+                                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* ========================================================
+                                    PHASE 3: PAYMENT, SCREENSHOT & UTR ID SUBMISSION
+                                ======================================================== */}
+                                {currentStep === 3 && (
+                                    <form onSubmit={handleSubmit} noValidate className="step-pane">
+                                        <div className="step-header-box">
+                                            <span className="step-header-tag">Phase 03 of 03</span>
+                                            <h3 className="step-header-title">
+                                                {isOfflineDesk ? "Admin Offline Desk Confirmation" : "Registration Payment & Confirmation"}
+                                            </h3>
+                                            <p className="step-header-desc">
+                                                {isOfflineDesk
+                                                    ? "Verify cash receipt and issue attendance pass."
+                                                    : "Scan the UPI QR, upload payment proof, and receive your attendance pass."}
+                                            </p>
+                                        </div>
+
+                                        {/* SUMMARY BADGE */}
+                                        <div className="checkout-summary-card">
+                                            <div className="summary-row">
+                                                <span className="summary-label">Attendee</span>
+                                                <span className="summary-val">{formData.name}</span>
+                                            </div>
+                                            <div className="summary-row">
+                                                <span className="summary-label">Roll No &amp; Branch</span>
+                                                <span className="summary-val">{formData.registrationNumber} &bull; {formData.branch} (Sec {formData.section})</span>
+                                            </div>
+                                            <div className="summary-row">
+                                                <span className="summary-label">Category</span>
+                                                <span className="summary-val">
+                                                    {formData.isAcmMember ? "🌟 ACE Member (Verified)" : "🎓 Regular Participant"}
+                                                </span>
+                                            </div>
+                                            <div className="summary-row">
+                                                <span className="summary-label">Payment Mode</span>
+                                                <span className="summary-val" style={{ color: "#16a34a", fontWeight: "700" }}>
+                                                    {isOfflineDesk ? "Offline Desk (Cash Collected)" : "Online (UPI)"}
+                                                </span>
+                                            </div>
+                                        </div>
+
+                                        {/* ONLINE FLOW: QR CODE & PAYMENT UPLOADER */}
+                                        {!isOfflineDesk && (
+                                            <>
+                                                {/* PAYMENT QR CARD */}
+                                                <div className="payment-qr-card">
+                                                    <h4>Scan &amp; Pay via UPI</h4>
+                                                    <p className="payment-subtext">
+                                                        Google Pay &bull; PhonePe &bull; Paytm &bull; BHIM
+                                                    </p>
+
+                                                    <div className="upi-qr-display-box">
+                                                        {upiQrDataUrl ? (
+                                                            <img src={upiQrDataUrl} alt="UPI QR Code" className="upi-qr-img" />
+                                                        ) : (
+                                                            <div className="upi-qr-placeholder">Generating UPI QR...</div>
+                                                        )}
+                                                        <div className="upi-qr-badge">SRKR ACM UPI</div>
+                                                    </div>
+
+                                                    <div className="upi-copy-container">
+                                                        <span className="upi-id-text">srkr.acm@upi</span>
+                                                        <button
+                                                            type="button"
+                                                            className="copy-upi-btn"
+                                                            onClick={copyUpiId}
+                                                        >
+                                                            {copiedUpi ? "Copied! ✓" : "Copy UPI ID"}
+                                                        </button>
+                                                    </div>
+
+                                                    <p className="upi-note">
+                                                        Pay fee via UPI, copy the 12-digit UTR ID, and upload screenshot below.
+                                                    </p>
+                                                </div>
+
+                                                {/* PAYMENT SCREENSHOT UPLOADER */}
+                                                <div className="file-upload-block">
+                                                    <label>
+                                                        <span>
+                                                            Payment Transaction Screenshot <span className="req-star">*</span>
+                                                        </span>
+                                                        <span className="file-size-badge">Max 10 MB</span>
+                                                    </label>
+
+                                                    <input
+                                                        type="file"
+                                                        accept="image/png, image/jpeg, image/jpg, image/webp"
+                                                        ref={paymentFileInputRef}
+                                                        style={{ display: "none" }}
+                                                        onChange={handlePaymentScreenshotChange}
+                                                    />
+
+                                                    {!previews.payment ? (
+                                                        <div
+                                                            className="file-dropzone"
+                                                            onClick={() => paymentFileInputRef.current?.click()}
+                                                        >
+                                                            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
+                                                            <div className="file-dropzone-prompt">
+                                                                <strong>Tap to upload</strong> PhonePe / UPI screenshot
+                                                            </div>
+                                                            <span className="file-dropzone-hint">
+                                                                PNG, JPG or WEBP (Max 10 MB)
+                                                            </span>
+                                                        </div>
+                                                    ) : (
+                                                        <div className="file-preview-card">
+                                                            <img src={previews.payment.url} alt="Payment Screenshot Preview" className="preview-thumb" />
+                                                            <div className="preview-meta">
+                                                                <div className="preview-name">{previews.payment.name}</div>
+                                                                <div className="preview-size">{previews.payment.size} &bull; Ready</div>
+                                                            </div>
+                                                            <button type="button" className="preview-remove-btn" onClick={removePaymentScreenshot}>
+                                                                Remove
+                                                            </button>
+                                                        </div>
+                                                    )}
+                                                </div>
+
+                                                {/* UTR ID INPUT */}
+                                                <div className="field" style={{ marginTop: "18px" }}>
+                                                    <label>
+                                                        <svg className="field-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="1" y="4" width="22" height="16" rx="2"></rect><line x1="1" y1="10" x2="23" y2="10"></line></svg>
+                                                        Unique Transaction Reference (UTR) ID <span className="req-star">*</span>
+                                                    </label>
+                                                    <input
+                                                        type="text"
+                                                        name="utrId"
+                                                        value={formData.utrId}
+                                                        onChange={handleChange}
+                                                        placeholder="12-digit UTR ID from payment app"
+                                                        style={{ textTransform: "uppercase" }}
+                                                        required
+                                                    />
+                                                    <span className="field-helper-text">
+                                                        Enter the 12-digit UTR / UPI Ref ID from your payment confirmation.
+                                                    </span>
+                                                </div>
+                                            </>
+                                        )}
+
+                                        {/* DECLARATION CHECKBOX */}
+                                        <div className="declaration-container">
+                                            <label className="declaration-label">
+                                                <input
+                                                    type="checkbox"
+                                                    name="declarationConfirmed"
+                                                    checked={formData.declarationConfirmed}
+                                                    onChange={handleChange}
+                                                    required
+                                                />
+                                                <span>
+                                                    {isOfflineDesk
+                                                        ? "I confirm that cash payment has been collected at the registration desk and student details are authentic."
+                                                        : formData.isAcmMember
+                                                        ? "I confirm that I am an active ACE Member and the submitted payment transaction reference is genuine."
+                                                        : "I confirm that the details provided and payment screenshot are genuine and authentic."}
+                                                </span>
+                                            </label>
+                                        </div>
+
+                                        {/* ERROR BANNER */}
+                                        {error && (
+                                            <div className="error-message" style={{ margin: "16px 0 8px" }}>
+                                                {error}
+                                            </div>
+                                        )}
+
+                                        {/* STEP 3 ACTION BUTTONS */}
+                                        <div className="step-nav-row" style={{ marginTop: "24px" }}>
+                                            <button
+                                                type="button"
+                                                className="btn-nav-back"
+                                                onClick={() => {
+                                                    setError("");
+                                                    setCurrentStep(2);
+                                                    scrollToForm();
+                                                }}
+                                                disabled={loading}
+                                            >
+                                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="15 18 9 12 15 6"></polyline></svg>
+                                                Back to Details
+                                            </button>
+
+                                            <button
+                                                type="submit"
+                                                className="btn-nav-next btn-nav-submit"
+                                                disabled={loading}
+                                            >
+                                                {loading ? (
+                                                    <span className="btn-spinner-content">
+                                                        <span className="btn-spinner" />
+                                                        Verifying UTR &amp; Registering...
+                                                    </span>
+                                                ) : (
+                                                    <>
+                                                        {isOfflineDesk ? "Register & Issue Cash Pass" : "Submit Registration"}
+                                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                                                    </>
+                                                )}
+                                            </button>
+                                        </div>
+                                    </form>
+                                )}
                             </>
                         )}
                     </div>
@@ -1265,6 +1619,46 @@ export default function App() {
                 </section>
             </main>
 
+            {/* SECRET OFFLINE DESK PASSCODE MODAL */}
+            {showOfflinePasscodeModal && (
+                <div className="offline-modal-backdrop" onClick={() => setShowOfflinePasscodeModal(false)}>
+                    <div className="offline-modal-card" onClick={(e) => e.stopPropagation()}>
+                        <div className="offline-modal-icon">🛠️</div>
+                        <h3>Admin Offline Registration Desk</h3>
+                        <p>Enter the master admin passcode to enable cash registration mode.</p>
+
+                        <form onSubmit={handleUnlockOfflineDesk}>
+                            <input
+                                type="password"
+                                value={offlinePasscodeInput}
+                                onChange={(e) => setOfflinePasscodeInput(e.target.value)}
+                                placeholder="Enter passcode"
+                                className="offline-passcode-input"
+                                autoFocus
+                            />
+                            {offlinePasscodeError && (
+                                <div className="error-message" style={{ margin: "10px 0" }}>
+                                    {offlinePasscodeError}
+                                </div>
+                            )}
+
+                            <div className="offline-modal-actions">
+                                <button
+                                    type="button"
+                                    className="btn-cancel"
+                                    onClick={() => setShowOfflinePasscodeModal(false)}
+                                >
+                                    Cancel
+                                </button>
+                                <button type="submit" className="btn-confirm">
+                                    Unlock Desk
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
             {/* EVENT GUIDE MODAL */}
             {showEventModal && (
                 <div className="event-modal-backdrop" onClick={() => setShowEventModal(false)}>
@@ -1281,7 +1675,6 @@ export default function App() {
                                 className="event-modal-close-btn"
                                 onClick={() => setShowEventModal(false)}
                                 title="Close Guide"
-                                aria-label="Close Guide"
                             >
                                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                             </button>
@@ -1302,7 +1695,7 @@ export default function App() {
                         </div>
 
                         <h2 style={{ fontSize: "22px", fontWeight: "800", color: "#0f172a", marginBottom: "8px" }}>
-                            Registration Successful!
+                            Registration Successful! 🎉
                         </h2>
 
                         <p style={{ fontSize: "14px", color: "#64748b", margin: "0 0 16px" }}>
@@ -1315,7 +1708,7 @@ export default function App() {
                                 <span className="receipt-val">{successData.name}</span>
                             </div>
                             <div className="receipt-row">
-                                <span className="receipt-label">Reg Number</span>
+                                <span className="receipt-label">Roll Number</span>
                                 <span className="receipt-val">{successData.registrationNumber}</span>
                             </div>
                             <div className="receipt-row">
@@ -1325,7 +1718,13 @@ export default function App() {
                             <div className="receipt-row">
                                 <span className="receipt-label">Category</span>
                                 <span className="receipt-val">
-                                    {successData.isAcmMember ? "ACM Body Member (2025–2029)" : "Regular Attendee"}
+                                    {successData.isAcmMember ? "🌟 ACE Member (Verified)" : "Regular Attendee"}
+                                </span>
+                            </div>
+                            <div className="receipt-row">
+                                <span className="receipt-label">Payment Status</span>
+                                <span className="receipt-val" style={{ color: "#16a34a", fontWeight: "700" }}>
+                                    {successData.paymentMode === "Offline" ? "Offline Desk (Cash)" : "Online (UPI)"}
                                 </span>
                             </div>
                             {successData.qrToken && (
@@ -1339,15 +1738,7 @@ export default function App() {
                         </div>
 
                         <div className="success-email-notice">
-                            {successData.isAcmMember ? (
-                                <span>
-                                    Confirmation email has been dispatched to <strong>{successData.email}</strong>.
-                                </span>
-                            ) : (
-                                <span>
-                                    Your personalized <strong>Attendance QR Code</strong> has been generated and sent to <strong>{successData.email}</strong> for scanning on both days.
-                                </span>
-                            )}
+                            Your official <strong>Attendance QR Pass</strong> has been sent to <strong>{successData.email}</strong>. Please present it for entry on both days!
                         </div>
 
                         <button

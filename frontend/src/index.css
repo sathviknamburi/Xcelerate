@@ -5916,3 +5916,1054 @@ select option {
         font-size: 7.5px;
     }
 }
+
+/* =========================================================
+   MEMBERSHIP SELECTOR & FAST PHONE LOOKUP (MOBILE-FIRST)
+========================================================= */
+.membership-choice-container {
+    margin-bottom: 22px;
+}
+
+.membership-choice-label {
+    font-size: 14px;
+    font-weight: 700;
+    color: #1e293b;
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.membership-cards-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+}
+
+@media (max-width: 520px) {
+    .membership-cards-grid {
+        grid-template-columns: 1fr;
+        gap: 10px;
+    }
+}
+
+.membership-card {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 14px 16px;
+    background: #f8fafc;
+    border: 1.5px solid #e2e8f0;
+    border-radius: 14px;
+    cursor: pointer;
+    transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    -webkit-tap-highlight-color: transparent;
+}
+
+.membership-card:hover {
+    border-color: #38bdf8;
+    background: #f0f9ff;
+}
+
+.membership-card.active {
+    background: #f0fdf4;
+    border-color: #22c55e;
+    box-shadow: 0 4px 14px rgba(34, 197, 94, 0.15);
+}
+
+.card-radio-dot {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    border: 2px solid #cbd5e1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    margin-top: 2px;
+    transition: all 0.2s ease;
+}
+
+.membership-card.active .card-radio-dot {
+    border-color: #22c55e;
+}
+
+.card-radio-dot .dot-inner {
+    width: 10px;
+    height: 10px;
+    background: #22c55e;
+    border-radius: 50%;
+}
+
+.card-text-block h4 {
+    font-size: 14px;
+    font-weight: 700;
+    color: #0f172a;
+    margin-bottom: 2px;
+}
+
+.card-text-block p {
+    font-size: 11.5px;
+    color: #64748b;
+    line-height: 1.4;
+    margin: 0;
+}
+
+/* PHONE LOOKUP */
+.phone-lookup-input-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.phone-lookup-input-wrapper input {
+    width: 100%;
+    padding-right: 42px;
+}
+
+.lookup-spinner-inline {
+    position: absolute;
+    right: 14px;
+    width: 18px;
+    height: 18px;
+    border: 2.5px solid #e2e8f0;
+    border-top-color: #0284c7;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+
+.lookup-alert {
+    padding: 12px 14px;
+    border-radius: 12px;
+    margin-top: 8px;
+    font-size: 13px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    animation: fadeIn 0.3s ease;
+}
+
+.lookup-alert.checking {
+    background: #f0f9ff;
+    color: #0369a1;
+    border: 1px solid #bae6fd;
+}
+
+.lookup-alert.verified {
+    background: #ecfdf5;
+    color: #065f46;
+    border: 1px solid #a7f3d0;
+}
+
+.verified-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.ace-id-pill {
+    background: #059669;
+    color: #ffffff;
+    font-weight: 800;
+    font-family: monospace;
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 9999px;
+    letter-spacing: 0.5px;
+}
+
+.verified-details {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    font-size: 12px;
+    color: #047857;
+    padding-top: 4px;
+    border-top: 1px dashed rgba(5, 150, 105, 0.2);
+}
+
+.lookup-alert.not-found {
+    background: #fef2f2;
+    color: #991b1b;
+    border: 1px solid #fecaca;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.switch-to-nonmember-btn {
+    background: #ef4444;
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    padding: 5px 10px;
+    font-size: 11px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.locked-badge {
+    margin-left: auto;
+    font-size: 11px;
+    font-weight: 600;
+    color: #059669;
+    background: #d1fae5;
+    padding: 2px 8px;
+    border-radius: 9999px;
+}
+
+/* CHECKOUT SUMMARY CARD */
+.checkout-summary-card {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 14px;
+    padding: 14px 16px;
+    margin-bottom: 20px;
+}
+
+.summary-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 6px 0;
+    font-size: 13px;
+    border-bottom: 1px solid #f1f5f9;
+}
+
+.summary-row:last-child {
+    border-bottom: none;
+}
+
+.summary-label {
+    color: #64748b;
+    font-weight: 500;
+}
+
+.summary-val {
+    color: #0f172a;
+    font-weight: 700;
+    text-align: right;
+}
+
+/* UPI QR & COPY BOX */
+.upi-qr-display-box {
+    position: relative;
+    display: inline-block;
+    background: #ffffff;
+    padding: 16px;
+    border-radius: 16px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
+    border: 1px solid #e2e8f0;
+    margin-bottom: 12px;
+}
+
+.qr-badge-overlay {
+    position: absolute;
+    bottom: -8px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #0284c7;
+    color: #ffffff;
+    font-size: 10px;
+    font-weight: 800;
+    padding: 2px 8px;
+    border-radius: 9999px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.upi-copy-container {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    background: #f1f5f9;
+    padding: 6px 12px;
+    border-radius: 10px;
+    margin: 10px auto;
+    max-width: 280px;
+}
+
+.upi-id-text {
+    font-family: monospace;
+    font-size: 13px;
+    font-weight: 700;
+    color: #0f172a;
+}
+
+.copy-upi-btn {
+    background: #0284c7;
+    color: #ffffff;
+    border: none;
+    border-radius: 6px;
+    padding: 4px 10px;
+    font-size: 11px;
+    font-weight: 700;
+    transition: all 0.2s ease;
+}
+
+.copy-upi-btn:hover {
+    background: #0369a1;
+}
+
+/* OFFLINE DESK BANNER */
+.offline-desk-banner {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);
+    border: 1.5px solid #f59e0b;
+    border-radius: 14px;
+    padding: 12px 16px;
+    margin-bottom: 20px;
+    gap: 12px;
+}
+
+.offline-desk-tag {
+    display: inline-block;
+    background: #b45309;
+    color: #ffffff;
+    font-size: 10px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    margin-right: 6px;
+}
+
+.offline-desk-info strong {
+    font-size: 13.5px;
+    color: #92400e;
+    display: block;
+}
+
+.offline-desk-info p {
+    font-size: 11.5px;
+    color: #b45309;
+    margin: 2px 0 0;
+}
+
+.offline-desk-exit-btn {
+    background: transparent;
+    border: 1px solid #b45309;
+    color: #b45309;
+    padding: 6px 12px;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 700;
+    white-space: nowrap;
+    transition: all 0.2s ease;
+}
+
+.offline-desk-exit-btn:hover {
+    background: #b45309;
+    color: #ffffff;
+}
+
+/* OFFLINE DESK MODAL */
+.offline-modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.75);
+    backdrop-filter: blur(8px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    padding: 16px;
+}
+
+.offline-modal-card {
+    background: #ffffff;
+    border-radius: 20px;
+    max-width: 400px;
+    width: 100%;
+    padding: 24px;
+    text-align: center;
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+}
+
+.offline-modal-icon {
+    font-size: 32px;
+    margin-bottom: 8px;
+}
+
+.offline-modal-card h3 {
+    font-size: 18px;
+    font-weight: 800;
+    color: #0f172a;
+    margin-bottom: 4px;
+}
+
+.offline-modal-card p {
+    font-size: 13px;
+    color: #64748b;
+    margin-bottom: 16px;
+}
+
+.offline-passcode-input {
+    width: 100%;
+    padding: 12px;
+    font-size: 16px;
+    text-align: center;
+    letter-spacing: 2px;
+    border: 1.5px solid #cbd5e1;
+    border-radius: 10px;
+    margin-bottom: 16px;
+}
+
+.offline-modal-actions {
+    display: flex;
+    gap: 10px;
+}
+
+.offline-modal-actions button {
+    flex: 1;
+    padding: 10px;
+    border-radius: 10px;
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.offline-modal-actions .btn-cancel {
+    background: #f1f5f9;
+    color: #475569;
+    border: 1px solid #e2e8f0;
+}
+
+.offline-modal-actions .btn-confirm {
+    background: #2563eb;
+    color: #ffffff;
+    border: none;
+}
+
+/* =========================================================
+   MEMBERSHIP CHOICE & PHASE 1 STYLES
+========================================================= */
+.membership-choice-container {
+    margin-bottom: 20px;
+}
+
+.membership-choice-label {
+    font-size: 14.5px;
+    font-weight: 700;
+    color: #1e293b;
+    margin-bottom: 12px;
+}
+
+.membership-cards-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+}
+
+@media (max-width: 600px) {
+    .membership-cards-grid {
+        grid-template-columns: 1fr;
+        gap: 12px;
+    }
+}
+
+.membership-card {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 16px 14px;
+    border-radius: 14px;
+    background: #ffffff;
+    border: 2px solid #e2e8f0;
+    cursor: pointer;
+    transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.03);
+    user-select: none;
+}
+
+.membership-card:hover {
+    border-color: #93c5fd;
+    background: #f8fafc;
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgba(37, 99, 235, 0.08);
+}
+
+.membership-card.active {
+    border-color: #2563eb;
+    background: #eff6ff;
+    box-shadow: 0 4px 14px rgba(37, 99, 235, 0.18);
+}
+
+.card-radio-dot {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    border: 2px solid #94a3b8;
+    background: #ffffff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    margin-top: 2px;
+    transition: all 0.2s ease;
+}
+
+.membership-card.active .card-radio-dot {
+    border-color: #2563eb;
+    background: #ffffff;
+}
+
+.dot-inner {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #2563eb;
+}
+
+.card-text-block h4 {
+    font-size: 14.5px;
+    font-weight: 700;
+    color: #0f172a;
+    margin: 0 0 3px;
+}
+
+.membership-card.active .card-text-block h4 {
+    color: #1e40af;
+}
+
+.card-text-block p {
+    font-size: 12px;
+    color: #64748b;
+    margin: 0;
+    line-height: 1.35;
+}
+
+.phase1-phone-container {
+    margin-top: 16px;
+    padding: 16px 18px;
+    background: #f0f7ff;
+    border: 1.5px solid #bfdbfe;
+    border-radius: 14px;
+    animation: fadeInSlide 0.3s ease;
+}
+
+@keyframes fadeInSlide {
+    from {
+        opacity: 0;
+        transform: translateY(8px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.mobile-phone-input {
+    font-size: 16px !important;
+    padding: 14px 16px !important;
+    letter-spacing: 1.5px;
+    font-weight: 700;
+    color: #0f172a;
+    border: 2px solid #93c5fd !important;
+    background: #ffffff !important;
+    border-radius: 10px !important;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.field-helper-text {
+    display: block;
+    font-size: 12px;
+    color: #64748b;
+    margin-top: 6px;
+    line-height: 1.4;
+}
+
+/* =========================================================
+   VERIFIED ACE MEMBER CARD (PHASE 2)
+========================================================= */
+.verified-member-card {
+    background: linear-gradient(135deg, #f0fdf4, #ecfdf5);
+    border: 1.5px solid #86efac;
+    border-radius: 16px;
+    padding: 16px 18px;
+    margin-bottom: 22px;
+    box-shadow: 0 4px 14px rgba(16, 185, 129, 0.08);
+}
+
+.verified-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 12px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid #bbf7d0;
+}
+
+.verified-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: #15803d;
+    color: #ffffff;
+    font-size: 12px;
+    font-weight: 800;
+    padding: 4px 10px;
+    border-radius: 9999px;
+    letter-spacing: 0.5px;
+}
+
+.ace-id-tag {
+    font-size: 12px;
+    font-weight: 800;
+    color: #1e3a8a;
+    background: #dbeafe;
+    border: 1px solid #bfdbfe;
+    padding: 3px 10px;
+    border-radius: 9999px;
+    font-family: monospace;
+}
+
+.verified-info-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px 14px;
+}
+
+@media (max-width: 500px) {
+    .verified-info-grid {
+        grid-template-columns: 1fr;
+        gap: 8px;
+    }
+}
+
+.verified-info-item {
+    display: flex;
+    flex-direction: column;
+}
+
+.info-label {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: #166534;
+    letter-spacing: 0.5px;
+}
+
+.info-value {
+    font-size: 14px;
+    font-weight: 700;
+    color: #0f172a;
+    word-break: break-all;
+}
+
+.verified-card-footer {
+    font-size: 11px;
+    font-weight: 600;
+    color: #15803d;
+    margin-top: 10px;
+    padding-top: 8px;
+    border-top: 1px dashed #bbf7d0;
+}
+
+.remaining-fields-notice {
+    font-size: 13.5px;
+    color: #334155;
+    margin-bottom: 14px;
+    font-weight: 600;
+}
+
+/* =========================================================
+   CHECKOUT SUMMARY CARD (PHASE 3)
+========================================================= */
+.checkout-summary-card {
+    background: #f8fafc;
+    border: 1.5px solid #e2e8f0;
+    border-radius: 14px;
+    padding: 14px 16px;
+    margin-bottom: 20px;
+}
+
+.summary-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 5px 0;
+    font-size: 13px;
+}
+
+.summary-row:not(:last-child) {
+    border-bottom: 1px dashed #e2e8f0;
+}
+
+.summary-label {
+    color: #64748b;
+    font-weight: 600;
+}
+
+.summary-val {
+    color: #0f172a;
+    font-weight: 700;
+    text-align: right;
+}
+
+/* =========================================================
+   UPI PAYMENT CARD & QR DISPLAY (PHASE 3)
+========================================================= */
+.payment-qr-card {
+    background: #f0f7ff;
+    border: 2px solid #bfdbfe;
+    border-radius: 18px;
+    padding: 20px 16px;
+    text-align: center;
+    margin-bottom: 22px;
+}
+
+.payment-qr-card h4 {
+    font-size: 17px;
+    font-weight: 800;
+    color: #0f172a;
+    margin: 0 0 4px;
+}
+
+.payment-subtext {
+    font-size: 12.5px;
+    color: #64748b;
+    margin: 0 0 16px;
+}
+
+.upi-qr-display-box {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    background: #ffffff;
+    padding: 14px;
+    border-radius: 16px;
+    border: 1.5px solid #cbd5e1;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.06);
+    margin: 0 auto 16px;
+    position: relative;
+}
+
+.upi-qr-img {
+    width: 200px;
+    height: 200px;
+    display: block;
+    border-radius: 8px;
+}
+
+.upi-qr-placeholder {
+    width: 200px;
+    height: 200px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    color: #94a3b8;
+}
+
+.upi-qr-badge {
+    position: absolute;
+    bottom: -10px;
+    background: #1e3a8a;
+    color: #ffffff;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.5px;
+    padding: 3px 10px;
+    border-radius: 9999px;
+    text-transform: uppercase;
+}
+
+.upi-copy-container {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: #ffffff;
+    border: 1.5px solid #93c5fd;
+    border-radius: 12px;
+    padding: 6px 12px;
+    margin-top: 10px;
+    max-width: 100%;
+}
+
+.upi-id-text {
+    font-family: monospace;
+    font-size: 15px;
+    font-weight: 800;
+    color: #1e40af;
+    letter-spacing: 0.5px;
+}
+
+.copy-upi-btn {
+    border: none;
+    background: #2563eb;
+    color: #ffffff;
+    font-size: 12px;
+    font-weight: 700;
+    padding: 6px 14px;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.copy-upi-btn:hover {
+    background: #1d4ed8;
+}
+
+.upi-note {
+    font-size: 12px;
+    color: #64748b;
+    margin: 14px 0 0;
+    line-height: 1.4;
+}
+
+/* =========================================================
+   FILE UPLOAD BLOCK & DROPZONE
+========================================================= */
+.file-upload-block {
+    margin-bottom: 20px;
+}
+
+.file-upload-block label {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+    font-size: 13.5px;
+    font-weight: 700;
+    color: #1e293b;
+}
+
+.file-size-badge {
+    font-size: 11px;
+    font-weight: 700;
+    background: #f1f5f9;
+    color: #64748b;
+    padding: 2px 8px;
+    border-radius: 9999px;
+}
+
+.file-dropzone {
+    border: 2px dashed #93c5fd;
+    border-radius: 14px;
+    background: #f8fafc;
+    padding: 24px 16px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+}
+
+.file-dropzone:hover {
+    background: #eff6ff;
+    border-color: #2563eb;
+    transform: translateY(-1px);
+}
+
+.file-dropzone svg {
+    color: #2563eb;
+}
+
+.file-dropzone-prompt {
+    font-size: 14px;
+    color: #1e293b;
+}
+
+.file-dropzone-prompt strong {
+    color: #2563eb;
+}
+
+.file-dropzone-hint {
+    font-size: 11.5px;
+    color: #94a3b8;
+}
+
+.file-preview-card {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: #ffffff;
+    border: 1.5px solid #cbd5e1;
+    border-radius: 12px;
+    padding: 10px 14px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+
+.preview-thumb {
+    width: 52px;
+    height: 52px;
+    object-fit: cover;
+    border-radius: 8px;
+    border: 1px solid #e2e8f0;
+    flex-shrink: 0;
+}
+
+.preview-meta {
+    flex: 1;
+    min-width: 0;
+}
+
+.preview-name {
+    font-size: 13px;
+    font-weight: 700;
+    color: #0f172a;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.preview-size {
+    font-size: 11.5px;
+    color: #16a34a;
+    font-weight: 600;
+}
+
+.preview-remove-btn {
+    border: 1px solid #fecaca;
+    background: #fef2f2;
+    color: #dc2626;
+    font-size: 12px;
+    font-weight: 700;
+    padding: 6px 12px;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.preview-remove-btn:hover {
+    background: #fee2e2;
+    border-color: #f87171;
+}
+
+/* =========================================================
+   ATTENDANCE QR PASS CARD (ON PASS CONFIRMATION SCREEN)
+========================================================= */
+.pass-qr-card {
+    background: #ffffff;
+    border: 2px solid #2563eb;
+    border-radius: 18px;
+    padding: 18px 16px;
+    text-align: center;
+    margin: 16px auto 20px;
+    max-width: 320px;
+    box-shadow: 0 10px 25px rgba(37, 99, 235, 0.12);
+}
+
+.pass-qr-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+    font-size: 12px;
+    font-weight: 700;
+    color: #1e3a8a;
+}
+
+.pass-tag {
+    background: #eff6ff;
+    color: #2563eb;
+    border: 1px solid #bfdbfe;
+    padding: 2px 8px;
+    border-radius: 9999px;
+    font-size: 10px;
+}
+
+.pass-qr-image {
+    width: 200px;
+    height: 200px;
+    display: block;
+    margin: 0 auto 10px;
+    border-radius: 8px;
+}
+
+.pass-token-code {
+    font-family: monospace;
+    font-size: 14px;
+    font-weight: 800;
+    color: #1e40af;
+    background: #f1f5f9;
+    padding: 6px 12px;
+    border-radius: 8px;
+    letter-spacing: 1px;
+    display: inline-block;
+}
+
+.btn-nav-submit {
+    background: linear-gradient(135deg, #16a34a, #15803d) !important;
+    box-shadow: 0 4px 16px rgba(22, 163, 74, 0.35) !important;
+}
+
+.btn-nav-submit:hover {
+    background: linear-gradient(135deg, #15803d, #166534) !important;
+    box-shadow: 0 6px 20px rgba(22, 163, 74, 0.45) !important;
+}
+
+.btn-spinner-content {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.btn-spinner {
+    width: 16px;
+    height: 16px;
+    border: 2px solid #ffffff;
+    border-top-color: transparent;
+    border-radius: 50%;
+    display: inline-block;
+    animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+/* =========================================================
+   MOBILE RESPONSIVENESS TWEAKS
+========================================================= */
+@media (max-width: 640px) {
+    .hero-wrapper {
+        padding: 30px 16px 20px !important;
+    }
+    .hero-main-title {
+        font-size: 32px !important;
+    }
+    .hero-lead-text {
+        font-size: 13.5px !important;
+    }
+    .registration-card {
+        padding: 22px 16px !important;
+        border-radius: 20px !important;
+        margin: 0 12px !important;
+    }
+    .step-nav-row {
+        flex-direction: column-reverse;
+        gap: 10px;
+    }
+    .btn-nav-back,
+    .btn-nav-next {
+        width: 100%;
+        justify-content: center;
+        margin-left: 0;
+    }
+    .stepper-nav {
+        margin-bottom: 24px;
+    }
+    .upi-qr-img {
+        width: 170px;
+        height: 170px;
+    }
+    .upi-copy-container {
+        flex-direction: column;
+        gap: 6px;
+    }
+}
+
+

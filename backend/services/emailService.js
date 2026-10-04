@@ -28,11 +28,11 @@ export const generateQrDataUrl = async (content) => {
  * Constructs modern, mobile-friendly HTML email for Xcelerate-2K26
  */
 const buildEmailHtml = ({ name, isAcmMember, qrDataUrl }) => {
-    const qrSectionHtml = !isAcmMember && qrDataUrl ? `
-        <!-- QR CODE SECTION FOR NON-ACM ATTENDEES -->
+    const qrSectionHtml = qrDataUrl ? `
+        <!-- QR CODE ATTENDANCE SECTION -->
         <div style="background: #f8fafc; border: 2px dashed #0284c7; border-radius: 16px; padding: 24px; margin: 28px 0; text-align: center;">
             <div style="display: inline-block; background: #e0f2fe; color: #0284c7; font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; padding: 4px 12px; border-radius: 9999px; margin-bottom: 12px;">
-                Mandatory Check-in Pass
+                Official Event Check-in Pass
             </div>
             <h3 style="margin: 0 0 8px; font-size: 18px; font-weight: 700; color: #0f172a;">
                 Your Attendance QR 📲
@@ -160,18 +160,12 @@ export const sendRegistrationEmail = async ({
     let qrDataUrl = null;
     let qrBase64Only = null;
 
-    if (!isAcmMember && qrToken) {
-        // Encode attendance data into QR
-        const qrPayload = JSON.stringify({
-            token: qrToken,
-            regNo: registrationNumber,
-            name,
-            branch,
-            event: "Xcelerate-2K26",
-            type: "Non-ACM Attendee",
-        });
+    if (qrToken) {
+        // Universal verification URL for camera scanning + EBM attendance verification
+        const appBase = (process.env.APP_URL || "https://xcelerate26.vercel.app").replace(/\/+$/, "");
+        const verifyUrl = `${appBase}/verify/${qrToken}`;
 
-        qrDataUrl = await generateQrDataUrl(qrPayload);
+        qrDataUrl = await generateQrDataUrl(verifyUrl);
         if (qrDataUrl) {
             qrBase64Only = qrDataUrl.replace(/^data:image\/png;base64,/, "");
         }
@@ -196,7 +190,7 @@ export const sendRegistrationEmail = async ({
         });
 
         const mailAttachments = [];
-        if (!isAcmMember && qrBase64Only) {
+        if (qrBase64Only) {
             mailAttachments.push({
                 filename: "attendance-qr.png",
                 content: Buffer.from(qrBase64Only, "base64"),
@@ -217,7 +211,7 @@ export const sendRegistrationEmail = async ({
 
     // MODE 2: Brevo v3 HTTP REST API (used when key starts with xkeysib-)
     const attachments = [];
-    if (!isAcmMember && qrBase64Only) {
+    if (qrBase64Only) {
         attachments.push({
             name: "attendance-qr.png",
             content: qrBase64Only,

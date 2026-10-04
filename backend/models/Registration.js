@@ -25,20 +25,6 @@ const registrationSchema = new mongoose.Schema(
         branch: {
             type: String,
             required: true,
-            enum: [
-                "CSE",
-                "AIML",
-                "CIC",
-                "IT",
-                "AIDS",
-                "CSBS",
-                "CSIT",
-                "CSD",
-                "ECE",
-                "EEE",
-                "Mechanical",
-                "Civil",
-            ],
             trim: true,
         },
         section: {
@@ -51,39 +37,59 @@ const registrationSchema = new mongoose.Schema(
             type: String,
             required: true,
             trim: true,
+            index: true,
         },
         isAcmMember: {
             type: Boolean,
             required: true,
             default: false,
         },
-        // Only required if isAcmMember === true (max 1MB)
-        acmGroupScreenshot: {
+        aceId: {
+            type: String,
+            trim: true,
+            default: null,
+            index: true,
+        },
+        paymentMode: {
+            type: String,
+            enum: ["Online", "Offline"],
+            default: "Online",
+        },
+        // Optional if paymentMode === "Offline"
+        paymentScreenshot: {
             type: String,
             default: null,
         },
-        // Required for all (max 10MB)
-        paymentScreenshot: {
-            type: String,
-            required: true,
-        },
-        // Unique Transaction Reference (UTR) ID
+        // Optional if paymentMode === "Offline"
         utrId: {
             type: String,
-            required: true,
             trim: true,
+            default: null,
         },
         declarationConfirmed: {
             type: Boolean,
             required: true,
             default: true,
         },
-        // Unique attendance token generated for non-ACM attendees to scan QR code
+        // Unique attendance token generated for all attendees
         qrToken: {
             type: String,
             unique: true,
             sparse: true,
             trim: true,
+            index: true,
+        },
+        attendanceMarked: {
+            type: Boolean,
+            default: false,
+        },
+        attendanceMarkedAt: {
+            type: Date,
+            default: null,
+        },
+        attendanceMarkedBy: {
+            type: String,
+            default: null,
         },
         emailStatus: {
             type: String,
@@ -100,6 +106,6 @@ const registrationSchema = new mongoose.Schema(
     }
 );
 
-const Registration = mongoose.model("Registration", registrationSchema);
+const Registration = mongoose.model("Registration", registrationSchema, "xcelerate_real_registrations");
 
 export default Registration;

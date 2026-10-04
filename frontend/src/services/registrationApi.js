@@ -28,6 +28,25 @@ const API = axios.create({
     },
 });
 
+/**
+ * Check if a 10-digit phone number is registered in the official 2025 ACE / ACM member database
+ */
+export const checkMemberPhone = async (phone) => {
+    API.defaults.baseURL = getBaseUrl();
+    const base = (API.defaults.baseURL || "").replace(/\/+$/, "");
+    const cleanPhone = String(phone).replace(/\D/g, "").slice(-10);
+
+    const endpoint = base.endsWith("/api")
+        ? `/registrations/check-member/${cleanPhone}`
+        : `/api/registrations/check-member/${cleanPhone}`;
+
+    const response = await API.get(endpoint);
+    return response.data;
+};
+
+/**
+ * Submit participant registration (online UPI or secret offline desk)
+ */
 export const registerParticipant = async (data) => {
     API.defaults.baseURL = getBaseUrl();
 
